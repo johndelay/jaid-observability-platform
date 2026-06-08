@@ -1342,11 +1342,12 @@ function renderTrophy(){
     const cells=[];
     for(let d=0;d<7;d++)for(let hr=0;hr<24;hr++){
       const c=byKey[d+'-'+hr], v=c?(c.messages||0):0;
-      cells.push({x:hr,y:d,value:v,tip:DOW[d]+' '+(hr<10?'0':'')+hr+':00 — '+v+' msgs'});
+      cells.push({x:hr,y:d,value:v,key:v?('h:'+d+'-'+hr):null,
+        tip:DOW[d]+' '+(hr<10?'0':'')+hr+':00 — '+v+' msgs'+(v?' — tap for stats':'')});
     }
     h+=`<div class="lcard"><h3>When you code · last 30d</h3>
       ${svgHeatmap(cells,{cols:24,rows:7,cell:11,gap:2})}
-      <p class="foot" style="text-align:left;padding-top:6px">Day-of-week (rows: Sun→Sat) × hour 0–23 (local). Darker = more messages.</p></div>`;
+      <p class="foot" style="text-align:left;padding-top:6px">Day-of-week (rows: Sun→Sat) × hour 0–23 (local). Darker = more messages. <b>Tap an active slot</b> for its stats.</p></div>`;
   }
   // dumb-zone-time trend (Slice 5): healthy-zone % per day — the "am I keeping context cleaner over time?" hook
   const zt=r.zone_trend||[];
@@ -1422,6 +1423,27 @@ function dayStatsBody(iso){
 function openDayPop(iso){ const t=document.getElementById('daypoptitle'), b=document.getElementById('daypopbody');
   if(t)t.textContent=_dayTitle(iso); if(b)b.innerHTML=dayStatsBody(iso); if(daypop)daypop.hidden=false; }
 function closeDayPop(){ if(daypop)daypop.hidden=true; }
+// hourly grid slot-click (key 'h:<dow>-<hour>') → that weekday×hour slot's stats vs the rest of the 24×7 grid
+function _slotParts(key){ const m=String(key).replace('h:','').split('-'); return {dow:+m[0], hour:+m[1]}; }
+function _slotTitle(key){ const s=_slotParts(key); return '🕐 '+_WDFULL[s.dow]+'s at '+(s.hour<10?'0':'')+s.hour+':00'; }
+function slotStatsBody(key){
+  const s=_slotParts(key), r=window._report||{}, hourly=r.hourly||[];
+  const slot=hourly.find(c=>c.dow===s.dow&&c.hour===s.hour), msgs=slot?(slot.messages||0):0;
+  const active=hourly.filter(c=>(c.messages||0)>0), n=active.length||1;
+  const total=active.reduce((a,c)=>a+(c.messages||0),0)||1, sorted=active.map(c=>c.messages||0).sort((a,b)=>b-a);
+  let dx;
+  if(!msgs){ dx='no messages in this slot over the last 30 days'; }
+  else{
+    const rank=sorted.indexOf(msgs)+1, avg=total/n, best=msgs>=sorted[0], share=Math.round(msgs/total*100);
+    dx=`#${rank} of ${n} active hour-slots · ${trend(msgs,avg).html} vs your avg slot · ${share}% of last-30d messages`+(best?' · <span class="best">🏆 peak hour</span>':'');
+  }
+  let h='<div class="daygrid"><div class="dayrow"><span class="dl">Messages · last 30d</span>'
+    +`<span class="dv">${fmt(msgs)}</span><span class="dx">${dx}</span></div></div>`;
+  h+=`<p class="foot" style="text-align:left;padding-top:8px">A "slot" is one weekday × hour (${_WDFULL[s.dow]} ${(s.hour<10?'0':'')+s.hour}:00), summed over the last 30 days. Local time; ranks are among slots you were actually active in.</p>`;
+  return h;
+}
+function openSlotPop(key){ const t=document.getElementById('daypoptitle'), b=document.getElementById('daypopbody');
+  if(t)t.textContent=_slotTitle(key); if(b)b.innerHTML=slotStatsBody(key); if(daypop)daypop.hidden=false; }
 async function pollTrophy(){try{const r=await fetch('/report');if(r.ok){window._report=await r.json();renderTrophy();}}catch(_){}}
 
 // ---- Craft Score scene (Phase 7): a rate-normalized, honor-system score for skilled+responsible use ----
@@ -2388,7 +2410,8 @@ pollAbout(); setInterval(pollAbout, 60000);             // ℹ️ About: version
 pollUpdate(); setInterval(pollUpdate, 300000);          // V13: self-update banner (server polls the manifest)
 { const st=document.getElementById('scene-trophy');   // calendar day-click + heatmap metric toggle (delegated, once)
   if(st)st.addEventListener('click',e=>{
-    const dk=e.target.closest('[data-k]'); if(dk){ openDayPop(dk.getAttribute('data-k')); return; }   // tap a day square
+    const dk=e.target.closest('[data-k]'); if(dk){ const k=dk.getAttribute('data-k');   // tap a calendar day or hour-slot
+      k.indexOf('h:')===0?openSlotPop(k):openDayPop(k); return; }
     const b=e.target.closest('[data-metric]'); if(!b)return;
     trophyMetric=b.getAttribute('data-metric'); prefSet('trophy.metric',trophyMetric); renderTrophy(); }); }
 { const se=document.getElementById('scene-efficiency');   // ROI "set plan price" buttons (delegated, attached once)

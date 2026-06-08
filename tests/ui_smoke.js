@@ -568,6 +568,8 @@ check('renderTrophy: all-time totals + streak + cache savings + breakdown', () =
   // the rhythm grid is a FULL 24×7 matrix → 168 cells regardless of how sparse the data is
   const rects = (out.match(/<rect/g) || []).length;
   if (rects < 168) throw new Error('rhythm grid should render a full 24×7=168-cell matrix, got ' + rects + ' rects total');
+  // active hour-slots are clickable (key 'h:<dow>-<hour>'); the fixture has dow1/hr9 and dow4/hr22
+  if (!out.includes('data-k="h:1-9"') || !out.includes('data-k="h:4-22"')) throw new Error('active hour-slots should render clickable hcells');
   if (!out.includes('Context hygiene')) throw new Error('dumb-zone hygiene-trend card missing');
   if (!out.includes('72%')) throw new Error('latest healthy-zone % missing');
   if (!out.includes('▲ 15pt')) throw new Error('hygiene trend delta vs avg wrong (72 vs avg 57.5 → Math.round(14.5)=+15pt)');
@@ -685,6 +687,23 @@ check('dayStatsBody builds per-day stats with rank / best-ever from the report p
   if (!/best ever/.test(b)) throw new Error('the top day should be flagged best-ever');
   if (!/of all-time/.test(b)) throw new Error('share-of-all-time missing');
   if (ctx.dayStatsBody('1999-01-01').indexOf('No data') < 0) throw new Error('unknown day → graceful "No data"');
+  win._report = null;
+});
+
+// 9l2d) hour-slot popup (Trophy rhythm grid): per weekday×hour stats built client-side from /report hourly
+check('slotStatsBody builds per-hour-slot stats with rank / peak from the report payload', () => {
+  if (typeof ctx.slotStatsBody !== 'function') throw new Error('slotStatsBody() not defined');
+  win._report = { enabled: true, hourly: [
+    { dow: 4, hour: 22, messages: 90 },   // the peak slot
+    { dow: 1, hour: 9, messages: 40 },
+    { dow: 2, hour: 14, messages: 10 } ] };
+  const b = ctx.slotStatsBody('h:4-22');
+  if (!/Messages/.test(b)) throw new Error('slot popup missing the messages metric');
+  if (!/#1 of 3 active hour-slots/.test(b)) throw new Error('slot rank missing/wrong');
+  if (!/peak hour/.test(b)) throw new Error('top slot should be flagged peak hour');
+  if (!/of last-30d messages/.test(b)) throw new Error('share-of-30d missing');
+  const empty = ctx.slotStatsBody('h:0-3');   // a slot with no activity
+  if (empty.indexOf('no messages in this slot') < 0) throw new Error('inactive slot → graceful no-activity copy');
   win._report = null;
 });
 

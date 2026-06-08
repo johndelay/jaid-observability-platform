@@ -274,6 +274,16 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
       await page.keyboard.press('Escape');
       await page.waitForFunction(() => document.getElementById('daypop').hidden, undefined, { timeout: 2000, polling: 100 });
     }
+    // and an hourly-grid slot (key 'h:<dow>-<hour>') routes to the slot popup ("...s at HH:00")
+    const hasSlot = await page.evaluate(() => !!document.querySelector('#scene-trophy rect.hcell[data-k^="h:"]'));
+    if (hasSlot) {
+      await page.evaluate(() => document.querySelector('#scene-trophy rect.hcell[data-k^="h:"]').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await page.waitForFunction(() => {
+        const dp = document.getElementById('daypop');
+        return dp && !dp.hidden && /\bat \d\d:00/.test(document.getElementById('daypoptitle').textContent || '');
+      }, undefined, { timeout: 3000, polling: 100 });
+      await page.keyboard.press('Escape');
+    }
     await page.evaluate(() => window.goScene && window.goScene(0));
   });
 
