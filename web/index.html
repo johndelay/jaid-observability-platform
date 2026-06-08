@@ -886,7 +886,17 @@ function _sgFetch(){
   });
 }
 // current suggestion index (per page-load; not persisted — keeps it lightweight)
-let _sgIdx=0;
+let _sgIdx=0, _sgTimer=null, _sgHover=false;
+// auto-advance the card on a STANDALONE 12s timer — deliberately NOT restarted by render() (which fires every
+// ~5s on SSE, so restarting there would mean it never elapses). Holds while the card is hovered (_sgHover, set
+// by listeners in _wireSuggest) so it never yanks an article away mid-read. Manual ‹ › nav resets the clock.
+function _sgTick(){
+  if(_sgHover)return;                                    // mid-read → hold
+  const items=_sgItems(_sgArticleList()); if(items.length<2)return;
+  _sgIdx=(_sgIdx+1)%items.length;
+  try{render(window._list||[]);}catch(_){}
+}
+function _sgAuto(){ if(_sgTimer){try{clearInterval(_sgTimer);}catch(_){}} try{_sgTimer=setInterval(_sgTick,12000);}catch(_){} }
 function _sgArticleList(){ return (_sgFetched&&_sgFetched.length)?_sgFetched:SUGGESTIONS; }
 function _sgItems(list){
   // optionally prepend a live tip if any session is in the dumb zone
@@ -924,13 +934,16 @@ function renderSuggestCard(){
     </div>
   </div>`;
 }
-// on page load: if already opted-in, kick off a background refresh
+// on page load: if already opted-in, kick off a background refresh; start the auto-advance timer
 if(prefGet('suggest.fetch',false)){ try{_sgFetch();}catch(_){} }
+_sgAuto();   // start card auto-advance (12s · pauses on hover/focus · reset by manual nav)
 // wire up suggest card navigation + opt-in checkbox (called after each render)
 function _wireSuggest(){
+  const card=document.querySelector('.suggest');
+  if(card){ card.onmouseenter=()=>{_sgHover=true;}; card.onmouseleave=()=>{_sgHover=false;}; }  // pause auto-advance on hover
   const prev=document.querySelector('[data-sg-prev]'), nxt=document.querySelector('[data-sg-next]');
-  if(prev)prev.onclick=()=>{ const n=_sgItems(_sgArticleList()).length; _sgIdx=(_sgIdx-1+n)%n; try{render(window._list||[]);}catch(_){} };
-  if(nxt)nxt.onclick=()=>{ const n=_sgItems(_sgArticleList()).length; _sgIdx=(_sgIdx+1)%n; try{render(window._list||[]);}catch(_){} };
+  if(prev)prev.onclick=()=>{ const n=_sgItems(_sgArticleList()).length; _sgIdx=(_sgIdx-1+n)%n; _sgAuto(); try{render(window._list||[]);}catch(_){} };
+  if(nxt)nxt.onclick=()=>{ const n=_sgItems(_sgArticleList()).length; _sgIdx=(_sgIdx+1)%n; _sgAuto(); try{render(window._list||[]);}catch(_){} };
   const chk=document.getElementById('sg-fetch-chk');
   if(chk)chk.onchange=e=>{
     prefSet('suggest.fetch',e.target.checked);

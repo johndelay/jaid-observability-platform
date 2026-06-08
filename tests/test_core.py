@@ -2139,9 +2139,55 @@ class VersionTests(unittest.TestCase):
         self.assertFalse(version.is_newer("0.12.9", "0.13.0"))
         self.assertFalse(version.is_newer("garbage", "0.13.0"))
 
+    def test_is_newer_extended(self):
+        """Additional is_newer cases required by A3 spec."""
+        # patch bump
+        self.assertTrue(version.is_newer("0.13.1", "0.13.0"))
+        # minor bump
+        self.assertTrue(version.is_newer("0.14.0", "0.13.0"))
+        # same version
+        self.assertFalse(version.is_newer("0.13.0", "0.13.0"))
+        # older minor (9 < 13)
+        self.assertFalse(version.is_newer("0.9.0", "0.13.0"))
+        # v-prefix tolerated on latest
+        self.assertTrue(version.is_newer("v0.13.1", "0.13.0"))
+        # v-prefix tolerated on current
+        self.assertTrue(version.is_newer("0.13.1", "v0.13.0"))
+        # malformed/empty LATEST (e.g. failed manifest fetch) → False, no exception, no spurious update.
+        # (current is always version.VERSION in production, never None — so only `latest` is exercised here.)
+        self.assertFalse(version.is_newer("not-a-version", "0.13.0"))
+        self.assertFalse(version.is_newer(None, "0.13.0"))    # type: ignore[arg-type]
+
     def test_upgrade_verb(self):
         self.assertIn("docker compose", version.upgrade_verb("docker"))
         self.assertIn("pipx", version.upgrade_verb("native"))
+
+    def test_version_py_and_pyproject_toml_in_sync(self):
+        """Guard: version.VERSION must equal the version field in pyproject.toml.
+        Prevents silent drift between the two sources of truth."""
+        import re
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        toml_path = os.path.join(repo_root, "pyproject.toml")
+        self.assertTrue(os.path.exists(toml_path), f"pyproject.toml not found at {toml_path}")
+        with open(toml_path, encoding="utf-8") as fh:
+            toml_text = fh.read()
+        # Try stdlib tomllib (Python 3.11+) first; fall back to regex for 3.10.
+        toml_version = None
+        try:
+            import tomllib  # available Python 3.11+
+            data = tomllib.loads(toml_text)
+            toml_version = data.get("project", {}).get("version")
+        except ImportError:
+            m = re.search(r'^\s*version\s*=\s*"([^"]+)"', toml_text, re.MULTILINE)
+            if m:
+                toml_version = m.group(1)
+        self.assertIsNotNone(toml_version, "Could not parse version from pyproject.toml")
+        self.assertEqual(
+            version.VERSION,
+            toml_version,
+            f"version.py VERSION ({version.VERSION!r}) != pyproject.toml version ({toml_version!r}). "
+            "Run scripts/bump-version.sh to update both at once.",
+        )
 
 
 class MaintenanceTests(unittest.TestCase):

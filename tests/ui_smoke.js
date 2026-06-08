@@ -1270,6 +1270,20 @@ check('suggest: malformed/failed fetch → card still renders bundled list, no t
   if (!out.includes('Read →')) throw new Error('Read → link missing from suggest card after fetch failure');
 });
 
+// suggest: auto-advance — _sgTick() cycles to the next article (standalone 12s timer; pauses on hover/focus)
+check('suggest: _sgTick auto-advances to the next article', () => {
+  ctx.setFeat('dumbzone', false);   // no live-tip item → just the bundled articles
+  ctx._sgSetFetched(null);          // use the bundled list
+  ctx.render(STATE);
+  const titleOf = () => (document.getElementById('app').innerHTML.match(/sg-title">([^<]*)/) || [])[1];
+  const before = titleOf();
+  ctx._sgTick();                    // advance one
+  const after = titleOf();
+  if (!before || !after) throw new Error('suggest title not found before/after tick');
+  if (before === after) throw new Error('auto-advance (_sgTick) did not change the displayed article');
+  ctx.setFeat('dumbzone', true);    // restore default
+});
+
 // ---- 🆕 self-update banner (V13 Slice 6) ----
 check('renderUpdate: shows banner + verb when newer, hidden otherwise, dismissable', () => {
   if (typeof ctx.renderUpdate !== 'function') throw new Error('renderUpdate() not defined');
