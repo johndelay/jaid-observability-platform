@@ -68,9 +68,9 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     process.exit(0);
   }
 
-  await check('page title is the triage app', async () => {
+  await check('page title is the JAID Observability Platform', async () => {
     const t = await page.title();
-    if (!/Triage/i.test(t)) throw new Error('unexpected title: ' + JSON.stringify(t));
+    if (!/JAID Observability Platform/i.test(t)) throw new Error('unexpected title: ' + JSON.stringify(t));
   });
 
   await check('fleet renders (hero + content) within 8s', async () => {
