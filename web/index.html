@@ -11,7 +11,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon.svg">
-<title>Claude Code — Triage</title>
+<title>JAID Observability Platform</title>
 <style>
   /* ---- pinball-inspired palette (coral/cyan on deep navy) ----
      Coral/cyan on deep navy. NOTE: arcade titles use --font-display, a system stack that APPROXIMATES
@@ -40,9 +40,10 @@
     border-bottom:2px solid var(--primary);box-shadow:0 3px 18px rgba(255,107,53,.28);z-index:5}
   #menubtn{background:transparent;border:0;color:var(--accent);font-size:20px;line-height:1;
     padding:2px 4px;cursor:pointer;text-shadow:0 0 8px rgba(0,217,255,.5)}
-  header .t{font-family:var(--font-display);font-size:15px;font-weight:800;letter-spacing:1.5px;
+  header .t{font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:.8px;
     text-transform:uppercase;background:linear-gradient(90deg,var(--primary),var(--secondary),var(--accent));
-    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #conn{margin-left:auto;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
   #dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:.3s}
   #dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
@@ -451,7 +452,7 @@
 <body>
 <header>
   <button id="menubtn" aria-label="Open menu">☰</button>
-  <span class="t" id="apptitle">Claude Code</span>
+  <span class="t" id="apptitle">JAID Observability Platform</span>
   <span id="conn"><span id="dot"></span><span id="ctext">connecting…</span></span>
 </header>
 <div id="accounts" hidden></div>
@@ -2524,7 +2525,7 @@ function updateNav(){
   const vis=visibleScenes(), cur=vis[sceneIdx]||vis[0]||SCENES[0];
   if(navlabel)navlabel.textContent=(cur?cur.title:'')+(vis.length>1?' · '+(sceneIdx+1)+'/'+vis.length:'');
   if(navdots)navdots.innerHTML=vis.map((s,i)=>'<i class="'+(i===sceneIdx?'on':'')+'" data-i="'+i+'"></i>').join('');
-  if(apptitle)apptitle.textContent=cur?('Claude Code · '+cur.title):'Claude Code';
+  if(apptitle)apptitle.textContent='JAID Observability Platform';   // brand header (scene shown in the nav bar)
 }
 
 // --- mute (gates the new-waiting beep + flash; see render()) ---
