@@ -605,6 +605,7 @@ class Handler(BaseHTTPRequestHandler):
         window = 30
         reports = _store.mcp_reports()
         used = _store.mcp_servers_used(days=window)          # {host: {server: {calls, last_ts}}} — over time
+        used_all = _store.mcp_servers_used(days=0)           # all-time → "never" vs "last used Nd ago" for dead weight
         with _lock:
             snaps = list(_state.values())
         live = {}                                            # host -> {servers called in a CURRENT session}
@@ -619,6 +620,7 @@ class Handler(BaseHTTPRequestHandler):
         hosts = []
         for h, rep in reports.items():
             u = used.get(h, {})
+            ua = used_all.get(h, {})
             lv = live.get(h, set())
             servers, used_count = [], 0
             for sv in rep.get("servers", []):
@@ -627,10 +629,18 @@ class Handler(BaseHTTPRequestHandler):
                 calls = info["calls"] if info else 0
                 if calls > 0:
                     used_count += 1
+                ever = ua.get(name)
+                last_ever = ever["last_ts"] if ever else None
+                # tier drives the "turn-off candidate" framing: active (keep) → stale (used once, long ago) →
+                # never (configured but never called in any recorded transcript — the strongest candidate).
+                tier = "active" if calls > 0 else ("stale" if last_ever else "never")
                 servers.append({"name": name, "status": sv.get("status"), "calls": calls,
                                 "last_ts": info["last_ts"] if info else None,
+                                "last_ts_ever": last_ever, "tier": tier,
                                 "used": calls > 0, "live": name in lv})
-            servers.sort(key=lambda x: (not x["used"], -x["calls"], x["name"] or ""))
+            # active first (busiest on top); then turn-off candidates worst-first: "never" then oldest-stale.
+            servers.sort(key=lambda x: (not x["used"], -x["calls"] if x["used"] else (x["last_ts_ever"] or 0),
+                                        x["name"] or ""))
             hosts.append({"host": h, "ts": rep.get("ts"),
                           "age_secs": round(now - rep["ts"], 1) if rep.get("ts") else None,
                           "configured": len(servers), "used": used_count, "dead": len(servers) - used_count,
