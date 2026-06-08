@@ -46,14 +46,20 @@ data is ever sent; the check is outbound GET only; it never auto-applies anythin
 
 ## 3. Sync a sanitized snapshot to the public repo
 
-> **NOTE: The gated sanitizing sync script is Part A2 — not yet built.**
->
-> Until A2 is complete, perform a **manual sanitized copy** of the source tree:
-> 1. Copy changed files from `~/git/jaid-observability-platform/` to `~/git/jaid-observability-platform/`.
-> 2. Run `/sanitize-review` (Claude Code skill) on the public repo checkout **before pushing**
->    to catch any homelab fingerprints (real hostnames, internal IPs, credentials, table
->    prefixes, combination-of-innocuous-details risks).
-> 3. Confirm the review is clean, then `git push` the public repo.
+The gated sanitizing sync script (Part A2) is **built**: `scripts/sync-to-public.sh` (run from the
+private repo). It copies the tracked source tree private→public, applies the genericization rules,
+runs a fingerprint gate that **aborts before any commit/push** if a homelab fingerprint survives, and
+never overwrites the public-managed files (`README.md`, `TERMS.md`, `manifest.json`, `LICENSE`,
+`COMPLIANCE.md` — hand-edit those directly in the public repo).
+
+```sh
+bash scripts/sync-to-public.sh            # dry-run: review the diff + confirm "Fingerprint gate: CLEAN ✓"
+bash scripts/sync-to-public.sh --push     # commit + push the public repo (only after a clean dry-run)
+```
+
+Because it copies the whole current tree (not a diff) it is idempotent — one run brings public fully
+current and sweeps up any earlier unsynced drift. As a second guard for combination risks, also run
+`/sanitize-review` (Claude Code skill) on the public checkout before sharing a release widely.
 
 ---
 

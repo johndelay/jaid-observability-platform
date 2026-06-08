@@ -62,10 +62,14 @@ A single small container (python:3.12-alpine) that reads this host's transcripts
 dashboard. One process: `server.py` with `CC_LOCAL_SCAN=1` scans `~/.claude/projects` in-process.
 
 ```bash
-cp .env.sample .env          # set CC_HOST to this machine's name
+mkdir -p ~/.cache/cc-dashboard   # state-snapshot mount target — must exist before the first `up`
+cp .env.sample .env              # set CC_HOST to this machine's name
 docker compose up -d --build
 # open http://<this-host>:8099   (my-desktop = http://localhost:8099)
 ```
+
+> First load looks empty? That's expected until Claude Code has actually run on this host — the
+> dashboard reads `~/.claude/projects`, so it fills in as you use Claude Code (nothing to configure).
 
 > Only `~/.claude/projects` is mounted, **read-only** — not all of `~/.claude` (that holds
 > credentials). The container can't see the real hostname, so set `CC_HOST` in `.env`.
@@ -143,7 +147,7 @@ npm install && npx playwright install chromium
 ```
 
 > **Interactive visual polish** (vs. the automated gate above): this repo also enables the **Playwright MCP**
-> (`.mcp.json` + `.claude/settings.json`). Start a Claude Code session with this repo as the project root and
+> (via the bundled `.mcp.json`). Start a Claude Code session with this repo as the project root and
 > Claude can drive a real browser on demand — navigate, screenshot, read console — the same way a local
 > article-publishing workflow does. (Takes effect on a fresh session; MCP servers load at startup.)
 
@@ -201,5 +205,5 @@ Docker it defaults under `~/.cache/cc-observability/`.
 
 ## Roadmap
 
-See `PLAN.md`. Phase 1 = this (token gauge MVP). Next: PWA polish, containerize the
-collector on a dedicated server, multi-host watcher rollout, subagent/workflow timeline.
+Phase 1 = this (token gauge MVP). Next: PWA polish, containerize the collector on a
+dedicated server, multi-host watcher rollout, subagent/workflow timeline.
