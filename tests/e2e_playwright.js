@@ -174,6 +174,23 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     if (v.dots < 2) throw new Error('expected ≥2 scene dots (Triage + Help), got ' + v.dots);
   });
 
+  await check('nav: ► button does not shift horizontally when the scene label changes width', async () => {
+    // #navlabel sits left of the dots + ► — if it resizes per scene it shoves ► out from under the cursor.
+    // A fixed min-width + centered label keeps ►'s x-position constant. Measure it on a short label (Triage)
+    // vs the longest (Efficiency) and assert the button hasn't moved.
+    const measure = async (sceneIdx) => page.evaluate((i) => {
+      window.goScene && window.goScene(i);
+      const b = document.getElementById('navnext').getBoundingClientRect();
+      return { left: Math.round(b.left), label: (document.getElementById('navlabel') || {}).textContent || '' };
+    }, sceneIdx);
+    const triage = await measure(0);                 // "TRIAGE …" (short)
+    const eff = await measure(6);                     // "EFFICIENCY …" (longest)
+    if (triage.label === eff.label) throw new Error('scene label did not change between scenes 0 and 6 — test invalid');
+    if (Math.abs(triage.left - eff.left) > 1)
+      throw new Error(`► button moved ${Math.abs(triage.left - eff.left)}px when label changed ("${triage.label}" left=${triage.left} vs "${eff.label}" left=${eff.left}) — layout shift not fixed`);
+    await page.evaluate(() => window.goScene && window.goScene(0)); // restore
+  });
+
   await check('carousel transport: Cost + History + Trophy + Craft + Efficiency + Fleet + Archive + Maintenance + About + Help scenes reachable & populated', async () => {
     // scene 1 = Cost, 2 = History, 3 = Trophy, 4 = Craft, 5 = Coach, 6 = Efficiency, 7 = MCP, 8 = Fleet, 9 = Archive, 10 = Maintenance, 11 = About, 12 = Help
     await page.evaluate(() => window.goScene && window.goScene(1));

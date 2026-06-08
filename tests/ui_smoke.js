@@ -1270,18 +1270,35 @@ check('suggest: malformed/failed fetch → card still renders bundled list, no t
   if (!out.includes('Read →')) throw new Error('Read → link missing from suggest card after fetch failure');
 });
 
-// suggest: auto-advance — _sgTick() cycles to the next article (standalone 12s timer; pauses on hover/focus)
+// suggest: auto-advance — _sgTick() cycles to the next article (standalone 20s timer; pauses on hover/focus)
 check('suggest: _sgTick auto-advances to the next article', () => {
   ctx.setFeat('dumbzone', false);   // no live-tip item → just the bundled articles
   ctx._sgSetFetched(null);          // use the bundled list
   ctx.render(STATE);
-  const titleOf = () => (document.getElementById('app').innerHTML.match(/sg-title">([^<]*)/) || [])[1];
+  // title is now wrapped in an <a> when the item has a url — tolerate the optional anchor when extracting
+  const titleOf = () => (document.getElementById('app').innerHTML.match(/sg-title">(?:<a[^>]*>)?([^<]*)/) || [])[1];
   const before = titleOf();
   ctx._sgTick();                    // advance one
   const after = titleOf();
   if (!before || !after) throw new Error('suggest title not found before/after tick');
   if (before === after) throw new Error('auto-advance (_sgTick) did not change the displayed article');
   ctx.setFeat('dumbzone', true);    // restore default
+});
+
+// suggest: the article title is itself a clickable link to the article url (mirrors the Read → link)
+check('suggest: article title is a clickable link to the same url as Read →', () => {
+  ctx.setFeat('dumbzone', false);   // bundled articles only (all have urls)
+  ctx._sgSetFetched(null);
+  ctx.render(STATE);
+  const html = document.getElementById('app').innerHTML;
+  // the title div must contain an anchor opening in a new tab with rel=noopener
+  const m = html.match(/sg-title"><a href="([^"]+)"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
+  if (!m) throw new Error('sg-title is not a clickable new-tab link');
+  // and that href must equal the Read → link's href (same destination)
+  const read = html.match(/class="sg-read" href="([^"]+)"/);
+  if (!read) throw new Error('Read → link missing');
+  if (m[1] !== read[1]) throw new Error('title link url does not match Read → link url');
+  ctx.setFeat('dumbzone', true);
 });
 
 // ---- 🆕 self-update banner (V13 Slice 6) ----

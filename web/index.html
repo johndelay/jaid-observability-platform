@@ -77,6 +77,8 @@
   .suggest .sg-hd h3{margin:0;font-size:12px;color:var(--accent);font-weight:800;letter-spacing:.3px;text-transform:uppercase}
   .suggest .sg-tag{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;background:var(--card2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
   .suggest .sg-title{font-weight:700;color:var(--txt);margin:2px 0 1px}
+  .suggest .sg-title a{color:inherit;text-decoration:none;cursor:pointer}
+  .suggest .sg-title a:hover{color:var(--accent);text-decoration:underline}
   .suggest .sg-blurb{font-size:12px;color:var(--muted);line-height:1.4;margin:0 0 6px}
   .suggest .sg-footer{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-top:4px}
   .suggest .sg-nav{display:flex;align-items:center;gap:8px}
@@ -217,7 +219,10 @@
   .navbar button:hover{border-color:var(--accent)}
   #navtoggle{background:transparent;border:0;color:var(--accent);font-size:13px;padding:6px}
   #navlabel{font-family:var(--font-display);font-size:12px;letter-spacing:.8px;text-transform:uppercase;
-    color:var(--muted);white-space:nowrap}
+    color:var(--muted);white-space:nowrap;
+    /* fixed min-width (sized for the longest label, e.g. "EFFICIENCY · 6/12") + centered text so the
+       label never changes width between scenes — otherwise it shoves the dots and ► out from under the cursor */
+    min-width:150px;text-align:center}
   .navspring{flex:1}
   .dots{display:flex;gap:6px;align-items:center}
   .dots i{width:7px;height:7px;border-radius:50%;background:var(--line);transition:.2s;cursor:pointer}
@@ -887,7 +892,7 @@ function _sgFetch(){
 }
 // current suggestion index (per page-load; not persisted — keeps it lightweight)
 let _sgIdx=0, _sgTimer=null, _sgHover=false;
-// auto-advance the card on a STANDALONE 12s timer — deliberately NOT restarted by render() (which fires every
+// auto-advance the card on a STANDALONE 20s timer — deliberately NOT restarted by render() (which fires every
 // ~5s on SSE, so restarting there would mean it never elapses). Holds while the card is hovered (_sgHover, set
 // by listeners in _wireSuggest) so it never yanks an article away mid-read. Manual ‹ › nav resets the clock.
 function _sgTick(){
@@ -896,7 +901,7 @@ function _sgTick(){
   _sgIdx=(_sgIdx+1)%items.length;
   try{render(window._list||[]);}catch(_){}
 }
-function _sgAuto(){ if(_sgTimer){try{clearInterval(_sgTimer);}catch(_){}} try{_sgTimer=setInterval(_sgTick,12000);}catch(_){} }
+function _sgAuto(){ if(_sgTimer){try{clearInterval(_sgTimer);}catch(_){}} try{_sgTimer=setInterval(_sgTick,20000);}catch(_){} }
 function _sgArticleList(){ return (_sgFetched&&_sgFetched.length)?_sgFetched:SUGGESTIONS; }
 function _sgItems(list){
   // optionally prepend a live tip if any session is in the dumb zone
@@ -914,11 +919,15 @@ function renderSuggestCard(){
   const readLink=it.url
     ? `<a class="sg-read" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">Read →</a>`
     : '';
+  // title mirrors the Read link when there's a url (same target/rel) — click the headline to open the article
+  const titleHtml=it.url
+    ? `<a href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a>`
+    : esc(it.title);
   const dots=items.map((_,i)=>`<span class="sg-dot${i===idx?' on':''}"></span>`).join('');
   const checked=prefGet('suggest.fetch',false)?'checked':'';
   return `<div class="suggest">
     <div class="sg-hd"><h3>Suggestions &amp; Reading</h3>${tag}</div>
-    <div class="sg-title">${esc(it.title)}</div>
+    <div class="sg-title">${titleHtml}</div>
     <p class="sg-blurb">${esc(it.blurb)}</p>
     <div class="sg-footer">
       <div class="sg-nav">
@@ -936,7 +945,7 @@ function renderSuggestCard(){
 }
 // on page load: if already opted-in, kick off a background refresh; start the auto-advance timer
 if(prefGet('suggest.fetch',false)){ try{_sgFetch();}catch(_){} }
-_sgAuto();   // start card auto-advance (12s · pauses on hover/focus · reset by manual nav)
+_sgAuto();   // start card auto-advance (20s · pauses on hover/focus · reset by manual nav)
 // wire up suggest card navigation + opt-in checkbox (called after each render)
 function _wireSuggest(){
   const card=document.querySelector('.suggest');
