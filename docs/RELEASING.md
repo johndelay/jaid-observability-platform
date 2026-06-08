@@ -46,20 +46,20 @@ data is ever sent; the check is outbound GET only; it never auto-applies anythin
 
 ## 3. Sync a sanitized snapshot to the public repo
 
-The gated sanitizing sync script (Part A2) is **built**: `scripts/sync-to-public.sh` (run from the
-private repo). It copies the tracked source tree private→public, applies the genericization rules,
-runs a fingerprint gate that **aborts before any commit/push** if a homelab fingerprint survives, and
-never overwrites the public-managed files (`README.md`, `TERMS.md`, `manifest.json`, `LICENSE`,
-`COMPLIANCE.md` — hand-edit those directly in the public repo).
+A gated sync script genericizes and gates the snapshot: `scripts/sync-to-public.sh`. It copies the
+tracked source tree into the published checkout, applies the genericization rules, runs a fingerprint
+gate that **aborts before any commit/push** if a sensitive fingerprint survives, and never overwrites
+the public-managed files (`README.md`, `TERMS.md`, `manifest.json`, `LICENSE`, `COMPLIANCE.md`,
+`CHANGELOG.md` — hand-edit those directly in the published checkout).
 
 ```sh
 bash scripts/sync-to-public.sh            # dry-run: review the diff + confirm "Fingerprint gate: CLEAN ✓"
-bash scripts/sync-to-public.sh --push     # commit + push the public repo (only after a clean dry-run)
+bash scripts/sync-to-public.sh --push     # commit + push the published repo (only after a clean dry-run)
 ```
 
-Because it copies the whole current tree (not a diff) it is idempotent — one run brings public fully
-current and sweeps up any earlier unsynced drift. As a second guard for combination risks, also run
-`/sanitize-review` (Claude Code skill) on the public checkout before sharing a release widely.
+Because it copies the whole current tree (not a diff) it is idempotent — one run brings the published
+checkout fully current and sweeps up any earlier unsynced drift. As a second guard for combination
+risks, also run `/sanitize-review` (Claude Code skill) on the checkout before sharing a release widely.
 
 ---
 
