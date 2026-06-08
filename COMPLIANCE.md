@@ -36,7 +36,7 @@ Claude Code harness." The publicly stated distinction is:
 > Extracting OAuth tokens for a third-party API client = **banned**.
 
 cc-observability is squarely in the first category: it reads local files and drives the genuine CLI. It
-makes no API calls and never handles credentials, so the token-reuse / harness-spoofing prohibition does
+makes no Anthropic/vendor API calls and never handles credentials, so the token-reuse / harness-spoofing prohibition does
 not apply. Anthropic's clarifications do not address passive monitoring / observability tooling, and a
 broad ecosystem of similar local tools (e.g. ccusage and various Claude Code monitors) operates the same way.
 

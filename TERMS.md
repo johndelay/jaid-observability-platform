@@ -35,7 +35,8 @@ The Software is an independent project. It is **not affiliated with, endorsed by
 ## 8. Privacy, data, and opt-in network features
 - **By default, the Software egresses nothing.** It runs entirely on your machine and transmits no usage data to the Author or any third party.
 - The Software contains **no background telemetry**. The Author does not collect usage statistics from your instance. (Aggregate adoption is inferred only from public code-host statistics such as clone and release-download counts, which contain no data from your instance.)
-- The Software includes one **opt-in** network feature: a "latest suggestions" option you may enable, which fetches a public list of suggestions and article links. Enabling it sends **no usage data, no identifiers, and no personal information** — it only retrieves a public file. It is **off by default**.
+- The Software has **two opt-in outbound features — both off by default**, and each only *retrieves a public file* (sending **no usage data, no identifiers, and no personal information**): **(a)** a "latest suggestions" option that fetches a public suggestions/article list, and **(b)** a self-update check that fetches a public version manifest to tell you when a newer release exists (it **never auto-applies**). Both fetch public files hosted on a code-host (e.g. GitHub).
+- **Optional features move data only within systems you control — never to the Author**: enabling semantic search sends transcript content to *your own* local model (e.g. Ollama); running multiple hosts ships token counts to *your own* dashboard; the coaching feature, if enabled, uses *your own* AI account/tool. You remain responsible for these (see §6).
 - Following any link the Software displays opens that destination in your own browser, which is ordinary web browsing governed by that destination's own terms and privacy practices — not by the Software.
 
 ## 9. Limitation of liability

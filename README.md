@@ -8,7 +8,7 @@ activity. Stdlib Python only (no pip deps).
 
 _Independent project — not affiliated with or endorsed by Anthropic, Google, or any AI vendor whose products it integrates. Product names and trademarks (e.g. "Claude", "Antigravity") belong to their respective owners. Licensed under the MIT License (see LICENSE)._
 
-TOS / compliance posture (passive, local, no credentials, no API calls): [`COMPLIANCE.md`](COMPLIANCE.md).
+TOS / compliance posture (passive, local, no credentials, no third-party data egress): [`COMPLIANCE.md`](COMPLIANCE.md).
 Terms of Use: [`TERMS.md`](TERMS.md) · License: [`LICENSE`](LICENSE).
 
 ## How it works
@@ -52,7 +52,7 @@ Pick by what you're running:
 - **Always-on homelab server / many hosts → Docker.** Isolation, restart policy, a read-only transcript
   mount, and one reproducible image across the fleet. See **Run it (Docker)** below.
 
-Either way the app is self-hosted and content-free, makes no third-party calls, and survives upgrades
+Either way the app is self-hosted and content-free, makes no third-party calls by default (two opt-in features fetch public files — no data sent), and survives upgrades
 (your data lives in a volume / `~/.cache`; see `docs/UPGRADE.md`). Back up / move data with the encrypted
 export in the 🧹 Maintenance scene (`docs/DATA_EXPORT.md`).
 
