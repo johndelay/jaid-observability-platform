@@ -68,9 +68,9 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     process.exit(0);
   }
 
-  await check('page title is the triage app', async () => {
+  await check('page title is the JAID Observability Platform', async () => {
     const t = await page.title();
-    if (!/Triage/i.test(t)) throw new Error('unexpected title: ' + JSON.stringify(t));
+    if (!/JAID Observability Platform/i.test(t)) throw new Error('unexpected title: ' + JSON.stringify(t));
   });
 
   await check('fleet renders (hero + content) within 8s', async () => {
@@ -254,6 +254,37 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
       return help && help.textContent.includes('context window');
     }, undefined, { timeout: 4000, polling: 100 });
     await page.evaluate(() => window.goScene && window.goScene(0)); // back to Triage for the screenshot
+  });
+
+  await check('Trophy calendar: clicking an active day square opens the day-stats popup', async () => {
+    await page.evaluate(() => window.goScene && window.goScene(3));   // Trophy
+    await page.waitForFunction(() => {
+      const tr = document.getElementById('scene-trophy');
+      return tr && /Trophy Room/.test(tr.innerHTML) && !/Loading trophy/.test(tr.innerHTML);
+    }, undefined, { timeout: 4000, polling: 100 });
+    const hasCell = await page.evaluate(() => !!document.querySelector('#scene-trophy rect.hcell'));
+    if (!hasCell) { console.log('    (skip: no active calendar days in this host\'s report)'); }
+    else {
+      await page.evaluate(() => document.querySelector('#scene-trophy rect.hcell').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await page.waitForFunction(() => {
+        const dp = document.getElementById('daypop');
+        return dp && !dp.hidden && /Spend|Messages|Tokens/.test(document.getElementById('daypopbody').innerHTML);
+      }, undefined, { timeout: 3000, polling: 100 });
+      // Esc closes it again
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.getElementById('daypop').hidden, undefined, { timeout: 2000, polling: 100 });
+    }
+    // and an hourly-grid slot (key 'h:<dow>-<hour>') routes to the slot popup ("...s at HH:00")
+    const hasSlot = await page.evaluate(() => !!document.querySelector('#scene-trophy rect.hcell[data-k^="h:"]'));
+    if (hasSlot) {
+      await page.evaluate(() => document.querySelector('#scene-trophy rect.hcell[data-k^="h:"]').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await page.waitForFunction(() => {
+        const dp = document.getElementById('daypop');
+        return dp && !dp.hidden && /\bat \d\d:00/.test(document.getElementById('daypoptitle').textContent || '');
+      }, undefined, { timeout: 3000, polling: 100 });
+      await page.keyboard.press('Escape');
+    }
+    await page.evaluate(() => window.goScene && window.goScene(0));
   });
 
   await check('🔍 Search scene: the content firewall walls raw content on the LAN port', async () => {

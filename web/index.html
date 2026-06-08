@@ -11,7 +11,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon.svg">
-<title>Claude Code — Triage</title>
+<title>JAID Observability Platform</title>
 <style>
   /* ---- pinball-inspired palette (coral/cyan on deep navy) ----
      Coral/cyan on deep navy. NOTE: arcade titles use --font-display, a system stack that APPROXIMATES
@@ -40,9 +40,10 @@
     border-bottom:2px solid var(--primary);box-shadow:0 3px 18px rgba(255,107,53,.28);z-index:5}
   #menubtn{background:transparent;border:0;color:var(--accent);font-size:20px;line-height:1;
     padding:2px 4px;cursor:pointer;text-shadow:0 0 8px rgba(0,217,255,.5)}
-  header .t{font-family:var(--font-display);font-size:15px;font-weight:800;letter-spacing:1.5px;
+  header .t{font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:.8px;
     text-transform:uppercase;background:linear-gradient(90deg,var(--primary),var(--secondary),var(--accent));
-    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+    min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #conn{margin-left:auto;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
   #dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:.3s}
   #dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
@@ -303,6 +304,16 @@
   .hmbtn{font:inherit;font-size:10px;font-weight:700;letter-spacing:.2px;padding:2px 7px;border-radius:999px;
     border:1px solid var(--line);background:var(--card2);color:var(--muted);cursor:pointer}
   .hmbtn.on{background:var(--accent);color:#06121a;border-color:var(--accent)}
+  /* clickable calendar day squares: yellow outline on hover signals "tap for that day's stats" */
+  rect.hcell{cursor:pointer}
+  rect.hcell:hover{stroke:#ffe14d;stroke-width:1.6px;paint-order:stroke}
+  /* day-stats popup body */
+  .daygrid{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .dayrow{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--card2)}
+  .dayrow .dl{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  .dayrow .dv{float:right;font-weight:800;font-variant-numeric:tabular-nums}
+  .dayrow .dx{display:block;margin-top:3px;font-size:12px;color:var(--muted)}
+  .dayrow .best{color:#ffe14d;font-weight:700}
   .mxleg{float:right;display:inline-flex;gap:8px;font-size:10px;font-weight:600;color:var(--muted)}
   .mxk{display:inline-flex;align-items:center;gap:3px}
   .mxk i{width:9px;height:9px;border-radius:2px;display:inline-block}
@@ -451,7 +462,7 @@
 <body>
 <header>
   <button id="menubtn" aria-label="Open menu">☰</button>
-  <span class="t" id="apptitle">Claude Code</span>
+  <span class="t" id="apptitle">JAID Observability Platform</span>
   <span id="conn"><span id="dot"></span><span id="ctext">connecting…</span></span>
 </header>
 <div id="accounts" hidden></div>
@@ -611,6 +622,12 @@
   <div class="modalpanel">
     <div class="modalhead"><h3>📐 See your real MCP token usage</h3><button id="ctxhelpclose" class="modalclose">✕</button></div>
     <div id="ctxhelpbody"></div>
+  </div>
+</div>
+<div id="daypop" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3 id="daypoptitle">Day</h3><button id="daypopclose" class="modalclose">✕</button></div>
+    <div id="daypopbody"></div>
   </div>
 </div>
 <div id="convo" class="modal" hidden>
@@ -917,18 +934,14 @@ function _sgTick(){
 function _sgAuto(){ if(_sgTimer){try{clearInterval(_sgTimer);}catch(_){}} try{_sgTimer=setInterval(_sgTick,20000);}catch(_){} }
 function _sgArticleList(){ return (_sgFetched&&_sgFetched.length)?_sgFetched:SUGGESTIONS; }
 function _sgItems(list){
-  // optionally prepend a live tip if any session is in the dumb zone
-  const tip=feat.dumbzone&&window._list&&window._list.some(s=>['drift','danger','auto'].includes(zone(s).key))
-    ? [{kind:'tip', title:'🧠 A session is deep in context', blurb:'Consider /compact for a clean checkpoint.', url:null, tags:[]}]
-    : [];
-  return [...tip, ...list];
+  // Articles-only card. A live dumb-zone tip ("🧠 A session is deep in context") used to be prepended here,
+  // but it read as a fake "first article". Deep-context sessions are already surfaced by the gauges + statusline.
+  return list;
 }
 function renderSuggestCard(){
   const items=_sgItems(_sgArticleList()); if(!items.length)return '';
   const idx=_sgIdx%items.length; const it=items[idx];
-  const tag=it.kind==='tip'
-    ? `<span class="sg-tag">💡 tip</span>`
-    : `<span class="sg-tag">📖 From the blog</span>`;
+  const tag=`<span class="sg-tag">📖 From the blog</span>`;
   const readLink=it.url
     ? `<a class="sg-read" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">Read →</a>`
     : '';
@@ -1203,7 +1216,11 @@ function svgHeatmap(cells,opts){
   const max=opts.max||Math.max(1,...cells.map(c=>c.value||0));
   const lvl=v=>!v?0:(v/max>0.75?4:v/max>0.5?3:v/max>0.25?2:1);
   const w=cols*(cs+gap), h=rows*(cs+gap);
-  const rects=cells.map(c=>`<rect x="${(c.x*(cs+gap)).toFixed(1)}" y="${(c.y*(cs+gap)).toFixed(1)}" width="${cs}" height="${cs}" rx="2" fill="${HEAT[lvl(c.value||0)]}"><title>${esc(c.tip||'')}</title></rect>`).join('');
+  // a cell with a `key` becomes clickable (class hcell + data-k) → callers wire a popup; keyless cells are static
+  const rects=cells.map(c=>{
+    const click=c.key?` class="hcell" data-k="${esc(c.key)}"`:'';
+    return `<rect${click} x="${(c.x*(cs+gap)).toFixed(1)}" y="${(c.y*(cs+gap)).toFixed(1)}" width="${cs}" height="${cs}" rx="2" fill="${HEAT[lvl(c.value||0)]}"><title>${esc(c.tip||'')}</title></rect>`;
+  }).join('');
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="xMinYMin meet" style="display:block;margin-top:6px;max-width:100%;height:auto">${rects}</svg>`;
 }
 // build a GitHub-style year calendar from daily rows → {cells, cols}. Days are LOCAL (match the store's
@@ -1218,7 +1235,8 @@ function calendarCells(daily,metric){
   for(let dt=new Date(start); dt<=today; dt.setDate(dt.getDate()+1), i++){
     const iso=fmtDay(dt), d=byDay[iso], v=d?val(d):0;
     const lbl=metric==='messages'?(v+' msgs'):metric==='tokens'?(fmtTok(v)+' tokens'):usd(v);
-    cells.push({x:Math.floor(i/7), y:dt.getDay(), value:v, tip:iso+': '+(v?lbl:'no activity')});
+    cells.push({x:Math.floor(i/7), y:dt.getDay(), value:v, key:v?iso:null,
+      tip:iso+': '+(v?lbl+' — tap for stats':'no activity')});
   }
   return {cells, cols:Math.floor((i-1)/7)+1};
 }
@@ -1311,7 +1329,7 @@ function renderTrophy(){
     const btns=['cost','messages','tokens'].map(m=>`<button class="hmbtn${m===trophyMetric?' on':''}" data-metric="${m}">${mlabel[m]}</button>`).join('');
     h+=`<div class="lcard"><h3>Activity · last year<span class="hmtoggle">${btns}</span></h3>
       ${svgHeatmap(cells,{cols,rows:7,cell:11,gap:2})}
-      <p class="foot" style="text-align:left;padding-top:6px">One square per day — darker = more ${mlabel[trophyMetric]}. Hover a square for the date.</p></div>`;
+      <p class="foot" style="text-align:left;padding-top:6px">One square per day — darker = more ${mlabel[trophyMetric]}. <b>Tap an active day</b> (yellow outline on hover) for that day's stats.</p></div>`;
   }
   // time-of-day / day-of-week rhythm grid (Slice 4): full 24×7 matrix of message activity, reuses svgHeatmap
   const hourly=r.hourly||[];
@@ -1320,11 +1338,12 @@ function renderTrophy(){
     const cells=[];
     for(let d=0;d<7;d++)for(let hr=0;hr<24;hr++){
       const c=byKey[d+'-'+hr], v=c?(c.messages||0):0;
-      cells.push({x:hr,y:d,value:v,tip:DOW[d]+' '+(hr<10?'0':'')+hr+':00 — '+v+' msgs'});
+      cells.push({x:hr,y:d,value:v,key:v?('h:'+d+'-'+hr):null,
+        tip:DOW[d]+' '+(hr<10?'0':'')+hr+':00 — '+v+' msgs'+(v?' — tap for stats':'')});
     }
     h+=`<div class="lcard"><h3>When you code · last 30d</h3>
       ${svgHeatmap(cells,{cols:24,rows:7,cell:11,gap:2})}
-      <p class="foot" style="text-align:left;padding-top:6px">Day-of-week (rows: Sun→Sat) × hour 0–23 (local). Darker = more messages.</p></div>`;
+      <p class="foot" style="text-align:left;padding-top:6px">Day-of-week (rows: Sun→Sat) × hour 0–23 (local). Darker = more messages. <b>Tap an active slot</b> for its stats.</p></div>`;
   }
   // dumb-zone-time trend (Slice 5): healthy-zone % per day — the "am I keeping context cleaner over time?" hook
   const zt=r.zone_trend||[];
@@ -1364,6 +1383,63 @@ function renderTrophy(){
   }
   sc.innerHTML=h;
 }
+// Trophy calendar day-click → "interesting stats" for one day, computed client-side from the /report payload
+// already in hand (r.daily = per-day cost/msgs/tokens, r.all_time = lifetime). No new endpoint; screenshot-safe.
+const _MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const _WDFULL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function _dayTitle(iso){ const p=String(iso).split('-'), dt=new Date(+p[0],+p[1]-1,+p[2]);
+  return '📅 '+_WDFULL[dt.getDay()]+', '+_MON[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear(); }
+function dayStatsBody(iso){
+  const r=window._report||{}, daily=r.daily||[], at=r.all_time||{};
+  const d=daily.find(x=>x.day===iso);
+  if(!d) return '<div class="empty">No data for that day.</div>';
+  const active=daily.filter(x=>(x.cost_usd||0)||(x.messages||0)||(x.tokens||0)), n=active.length||1;
+  const METR=[
+    {label:'Spend',    get:x=>x.cost_usd||0, fmt:usd,    all:at.cost_usd||0},
+    {label:'Messages', get:x=>x.messages||0, fmt:fmt,    all:at.messages||0},
+    {label:'Tokens',   get:x=>x.tokens||0,   fmt:fmtTok, all:at.tokens||0},
+  ];
+  let h='<div class="daygrid">';
+  for(const m of METR){
+    const v=m.get(d); let dx;
+    if(!v){ dx='no activity in this metric'; }
+    else{
+      const sorted=active.map(m.get).sort((a,b)=>b-a);
+      const rank=sorted.indexOf(v)+1, avg=sorted.reduce((a,b)=>a+b,0)/n, best=v>=sorted[0];
+      const share=m.all?Math.round(v/m.all*100):0, t=trend(v,avg);
+      dx=`#${rank} of ${n} active days · ${t.html} vs your avg · ${share}% of all-time`+(best?' · <span class="best">🏆 best ever</span>':'');
+    }
+    h+=`<div class="dayrow"><span class="dl">${m.label}</span><span class="dv">${m.fmt(v)}</span><span class="dx">${dx}</span></div>`;
+  }
+  h+='</div>';
+  const tpm=d.messages?(d.tokens||0)/d.messages:0;
+  h+=`<p class="foot" style="text-align:left;padding-top:8px">${d.messages?'~'+fmtTok(Math.round(tpm))+' tokens/message that day · ':''}ranks are among your ${n} active days. Costs are estimates, computed locally.</p>`;
+  return h;
+}
+function openDayPop(iso){ const t=document.getElementById('daypoptitle'), b=document.getElementById('daypopbody');
+  if(t)t.textContent=_dayTitle(iso); if(b)b.innerHTML=dayStatsBody(iso); if(daypop)daypop.hidden=false; }
+function closeDayPop(){ if(daypop)daypop.hidden=true; }
+// hourly grid slot-click (key 'h:<dow>-<hour>') → that weekday×hour slot's stats vs the rest of the 24×7 grid
+function _slotParts(key){ const m=String(key).replace('h:','').split('-'); return {dow:+m[0], hour:+m[1]}; }
+function _slotTitle(key){ const s=_slotParts(key); return '🕐 '+_WDFULL[s.dow]+'s at '+(s.hour<10?'0':'')+s.hour+':00'; }
+function slotStatsBody(key){
+  const s=_slotParts(key), r=window._report||{}, hourly=r.hourly||[];
+  const slot=hourly.find(c=>c.dow===s.dow&&c.hour===s.hour), msgs=slot?(slot.messages||0):0;
+  const active=hourly.filter(c=>(c.messages||0)>0), n=active.length||1;
+  const total=active.reduce((a,c)=>a+(c.messages||0),0)||1, sorted=active.map(c=>c.messages||0).sort((a,b)=>b-a);
+  let dx;
+  if(!msgs){ dx='no messages in this slot over the last 30 days'; }
+  else{
+    const rank=sorted.indexOf(msgs)+1, avg=total/n, best=msgs>=sorted[0], share=Math.round(msgs/total*100);
+    dx=`#${rank} of ${n} active hour-slots · ${trend(msgs,avg).html} vs your avg slot · ${share}% of last-30d messages`+(best?' · <span class="best">🏆 peak hour</span>':'');
+  }
+  let h='<div class="daygrid"><div class="dayrow"><span class="dl">Messages · last 30d</span>'
+    +`<span class="dv">${fmt(msgs)}</span><span class="dx">${dx}</span></div></div>`;
+  h+=`<p class="foot" style="text-align:left;padding-top:8px">A "slot" is one weekday × hour (${_WDFULL[s.dow]} ${(s.hour<10?'0':'')+s.hour}:00), summed over the last 30 days. Local time; ranks are among slots you were actually active in.</p>`;
+  return h;
+}
+function openSlotPop(key){ const t=document.getElementById('daypoptitle'), b=document.getElementById('daypopbody');
+  if(t)t.textContent=_slotTitle(key); if(b)b.innerHTML=slotStatsBody(key); if(daypop)daypop.hidden=false; }
 async function pollTrophy(){try{const r=await fetch('/report');if(r.ok){window._report=await r.json();renderTrophy();}}catch(_){}}
 
 // ---- Craft Score scene (Phase 7): a rate-normalized, honor-system score for skilled+responsible use ----
@@ -2328,8 +2404,11 @@ pollSearchMeta(); setInterval(pollSearchMeta, 60000);   // V9: capability/enable
 pollMaint(); setInterval(pollMaint, 60000);             // V13: storage/maintenance stats (off the live path)
 pollAbout(); setInterval(pollAbout, 60000);             // ℹ️ About: version + runtime from /health (off the live path)
 pollUpdate(); setInterval(pollUpdate, 300000);          // V13: self-update banner (server polls the manifest)
-{ const st=document.getElementById('scene-trophy');   // calendar-heatmap metric toggle (delegated, attached once)
-  if(st)st.addEventListener('click',e=>{ const b=e.target.closest('[data-metric]'); if(!b)return;
+{ const st=document.getElementById('scene-trophy');   // calendar day-click + heatmap metric toggle (delegated, once)
+  if(st)st.addEventListener('click',e=>{
+    const dk=e.target.closest('[data-k]'); if(dk){ const k=dk.getAttribute('data-k');   // tap a calendar day or hour-slot
+      k.indexOf('h:')===0?openSlotPop(k):openDayPop(k); return; }
+    const b=e.target.closest('[data-metric]'); if(!b)return;
     trophyMetric=b.getAttribute('data-metric'); prefSet('trophy.metric',trophyMetric); renderTrophy(); }); }
 { const se=document.getElementById('scene-efficiency');   // ROI "set plan price" buttons (delegated, attached once)
   if(se)se.addEventListener('click',e=>{ const b=e.target.closest('[data-price]'); if(!b)return; setPlanPrice(b.getAttribute('data-price')); }); }
@@ -2417,7 +2496,7 @@ function renderUpdate(){
   const u=window._update, bar=document.getElementById('updatebar'); if(!bar)return;
   if(u&&u.update_available&&!window._updateDismissed){
     bar.style.display='flex';
-    bar.innerHTML='<span>🆕 cc-observability <b>'+esc(u.latest||'')+'</b> available (you have '+esc(u.current||'')
+    bar.innerHTML='<span>🆕 JAID Observability Platform <b>'+esc(u.latest||'')+'</b> available (you have '+esc(u.current||'')
       +') — run <code>'+esc(u.verb||'')+'</code></span><span class="x" data-update-dismiss role="button" tabindex="0">✕</span>';
   } else { bar.style.display='none'; }
 }
@@ -2507,6 +2586,7 @@ const carousel=document.getElementById('carousel'), track=document.getElementByI
       menu=document.getElementById('menu'), menubtn=document.getElementById('menubtn'),
       mcphelp=document.getElementById('mcphelp'),
       ctxhelp=document.getElementById('ctxhelp'),
+      daypop=document.getElementById('daypop'),
       convo=document.getElementById('convo'),
       menuscenes=document.getElementById('menuscenes'),
       navmute=document.getElementById('navmute'), muteSw=document.getElementById('mute-sw');
@@ -2524,7 +2604,7 @@ function updateNav(){
   const vis=visibleScenes(), cur=vis[sceneIdx]||vis[0]||SCENES[0];
   if(navlabel)navlabel.textContent=(cur?cur.title:'')+(vis.length>1?' · '+(sceneIdx+1)+'/'+vis.length:'');
   if(navdots)navdots.innerHTML=vis.map((s,i)=>'<i class="'+(i===sceneIdx?'on':'')+'" data-i="'+i+'"></i>').join('');
-  if(apptitle)apptitle.textContent=cur?('Claude Code · '+cur.title):'Claude Code';
+  if(apptitle)apptitle.textContent='JAID Observability Platform';   // brand header (scene shown in the nav bar)
 }
 
 // --- mute (gates the new-waiting beep + flash; see render()) ---
@@ -2615,6 +2695,9 @@ if(ctxhelp)ctxhelp.addEventListener('click',e=>{
   copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
     if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
 });
+// Trophy day-stats popup close/backdrop (wired after the element grab so `daypop` is initialized)
+elClick('daypopclose',closeDayPop);
+if(daypop)daypop.addEventListener('click',e=>{ if(e.target===daypop)closeDayPop(); });
 // 📜 Terms & License modal — wired here (after elClick defined); body built on open
 const termsmodal=document.getElementById('termsmodal');
 elClick('termsmodalclose',closeTermsModal);
@@ -2646,7 +2729,7 @@ if(carousel){
 // --- keyboard (← → between scenes; ESC closes menu/detail) — window events guarded for the smoke sandbox ---
 if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){ if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
+    if(e.key==='Escape'){ if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
     if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
     if(e.key==='ArrowRight')goScene(sceneIdx+1);
     else if(e.key==='ArrowLeft')goScene(sceneIdx-1);

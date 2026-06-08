@@ -568,6 +568,8 @@ check('renderTrophy: all-time totals + streak + cache savings + breakdown', () =
   // the rhythm grid is a FULL 24×7 matrix → 168 cells regardless of how sparse the data is
   const rects = (out.match(/<rect/g) || []).length;
   if (rects < 168) throw new Error('rhythm grid should render a full 24×7=168-cell matrix, got ' + rects + ' rects total');
+  // active hour-slots are clickable (key 'h:<dow>-<hour>'); the fixture has dow1/hr9 and dow4/hr22
+  if (!out.includes('data-k="h:1-9"') || !out.includes('data-k="h:4-22"')) throw new Error('active hour-slots should render clickable hcells');
   if (!out.includes('Context hygiene')) throw new Error('dumb-zone hygiene-trend card missing');
   if (!out.includes('72%')) throw new Error('latest healthy-zone % missing');
   if (!out.includes('▲ 15pt')) throw new Error('hygiene trend delta vs avg wrong (72 vs avg 57.5 → Math.round(14.5)=+15pt)');
@@ -658,9 +660,51 @@ check('svgHeatmap renders a colored grid + calendarCells lays out a year', () =>
   if (typeof ctx.calendarCells !== 'function') throw new Error('calendarCells() not defined');
   const hm = ctx.svgHeatmap([{ x: 0, y: 0, value: 5, tip: 'a' }, { x: 1, y: 2, value: 0, tip: 'b' }], { cols: 2, rows: 3 });
   if (!hm.includes('<svg') || !hm.includes('<rect')) throw new Error('no svg/rect output');
+  // a cell with a key → clickable rect (hcell + data-k); keyless cell stays static
+  const hk = ctx.svgHeatmap([{ x: 0, y: 0, value: 5, key: '2026-06-06' }, { x: 1, y: 0, value: 0 }], { cols: 2, rows: 1 });
+  if (!/class="hcell" data-k="2026-06-06"/.test(hk)) throw new Error('keyed cell should render a clickable hcell rect');
+  if ((hk.match(/data-k=/g) || []).length !== 1) throw new Error('only the keyed cell should be clickable');
   const cal = ctx.calendarCells([{ day: '2026-06-06', cost_usd: 3, messages: 9, tokens: 100 }], 'messages');
   if (cal.cols < 50 || cal.cols > 54) throw new Error('expected ~53 week columns, got ' + cal.cols);
   if (!cal.cells.length || cal.cells.some(c => c.y < 0 || c.y > 6)) throw new Error('calendar rows must be 0..6 (day-of-week)');
+  // active days get a clickable key; empty days do not
+  const activeCell = cal.cells.find(c => c.value > 0);
+  if (!activeCell || activeCell.key !== '2026-06-06') throw new Error('active day must carry a clickable key');
+  if (cal.cells.some(c => !c.value && c.key)) throw new Error('empty days must not be clickable (no key)');
+});
+
+// 9l2c) day-click popup (Trophy calendar): per-day "interesting stats" built client-side from /report
+check('dayStatsBody builds per-day stats with rank / best-ever from the report payload', () => {
+  if (typeof ctx.dayStatsBody !== 'function') throw new Error('dayStatsBody() not defined');
+  win._report = { enabled: true,
+    all_time: { cost_usd: 100, messages: 1000, tokens: 50000 },
+    daily: [ { day: '2026-06-06', cost_usd: 9, messages: 200, tokens: 9000 },   // the busiest day
+             { day: '2026-06-05', cost_usd: 1, messages: 20, tokens: 500 },
+             { day: '2026-06-04', cost_usd: 3, messages: 60, tokens: 2000 } ] };
+  const b = ctx.dayStatsBody('2026-06-06');
+  if (!/Spend/.test(b) || !/Messages/.test(b) || !/Tokens/.test(b)) throw new Error('day popup missing the three metrics');
+  if (!/#1 of 3 active days/.test(b)) throw new Error('rank among active days missing/wrong');
+  if (!/best ever/.test(b)) throw new Error('the top day should be flagged best-ever');
+  if (!/of all-time/.test(b)) throw new Error('share-of-all-time missing');
+  if (ctx.dayStatsBody('1999-01-01').indexOf('No data') < 0) throw new Error('unknown day → graceful "No data"');
+  win._report = null;
+});
+
+// 9l2d) hour-slot popup (Trophy rhythm grid): per weekday×hour stats built client-side from /report hourly
+check('slotStatsBody builds per-hour-slot stats with rank / peak from the report payload', () => {
+  if (typeof ctx.slotStatsBody !== 'function') throw new Error('slotStatsBody() not defined');
+  win._report = { enabled: true, hourly: [
+    { dow: 4, hour: 22, messages: 90 },   // the peak slot
+    { dow: 1, hour: 9, messages: 40 },
+    { dow: 2, hour: 14, messages: 10 } ] };
+  const b = ctx.slotStatsBody('h:4-22');
+  if (!/Messages/.test(b)) throw new Error('slot popup missing the messages metric');
+  if (!/#1 of 3 active hour-slots/.test(b)) throw new Error('slot rank missing/wrong');
+  if (!/peak hour/.test(b)) throw new Error('top slot should be flagged peak hour');
+  if (!/of last-30d messages/.test(b)) throw new Error('share-of-30d missing');
+  const empty = ctx.slotStatsBody('h:0-3');   // a slot with no activity
+  if (empty.indexOf('no messages in this slot') < 0) throw new Error('inactive slot → graceful no-activity copy');
+  win._report = null;
 });
 
 // 9l3) Trophy Room honest empty state must not throw
