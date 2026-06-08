@@ -47,7 +47,7 @@ directly (no Docker, so no dual-port firewall needed). Data lives under `~/.cach
      $USER` so it runs without an active session.)
    - **macOS (launchd):** write `~/Library/LaunchAgents/com.ccobs.dashboard.plist` running the venv's
      `cc-observability` with the checkout as the working dir and the `.env` values as `EnvironmentVariables`;
-     `launchctl load` it. (Mirror the pattern in `deploy/deploy-watcher-macos.sh` if present.)
+     `launchctl load` it.
    - **Windows:** create a Task Scheduler task (at-logon) running `.venv\Scripts\cc-observability.exe`, or
      instruct the user to run it in a terminal. Set env vars from `.env`.
 
