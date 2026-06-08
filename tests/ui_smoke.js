@@ -879,22 +879,35 @@ check('renderMcp renders configured/used/dead servers + setup card + empty state
   if (!out.includes('No MCP reports yet')) throw new Error('empty state missing');
   if (!out.includes('Set up MCP tracking')) throw new Error('setup card missing in empty state');
   if (!out.includes('mcp_probe.py')) throw new Error('probe command missing');
-  // populated: over-time usage (events) — a used+live server and a dead-weight (never-called-in-30d) one
+  // populated: over-time usage (events) — a used+live server, a NEVER-called dead one, and a STALE one (used long ago)
   win._mcp = { enabled: true, window_days: 30, hosts: [
-    { host: 'my-desktop', ts: 1, age_secs: 120, configured: 2, used: 1, dead: 1, window_days: 30,
-      servers: [ { name: 'github', status: 'connected', calls: 4, last_ts: (Date.now() / 1000) - 3600, used: true, live: true },
-                 { name: 'jira', status: 'failed', calls: 0, last_ts: null, used: false, live: false } ] },
+    { host: 'my-desktop', ts: 1, age_secs: 120, configured: 3, used: 1, dead: 2, window_days: 30,
+      servers: [ { name: 'github', status: 'connected', calls: 4, last_ts: (Date.now() / 1000) - 3600, last_ts_ever: (Date.now() / 1000) - 3600, tier: 'active', used: true, live: true },
+                 { name: 'slack', status: 'connected', calls: 0, last_ts: null, last_ts_ever: (Date.now() / 1000) - 60 * 86400, tier: 'stale', used: false, live: false },
+                 { name: 'jira', status: 'failed', calls: 0, last_ts: null, last_ts_ever: null, tier: 'never', used: false, live: false } ] },
   ] };
   ctx.renderMcp();
   out = document.getElementById('scene-mcp').innerHTML;
   const txt = out.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');   // strip markup + collapse so "<b>1</b> used" → "1 used"
-  if (!txt.includes('1 used') || !txt.includes('1 dead weight')) throw new Error('per-host summary missing');
+  if (!txt.includes('1 used') || !txt.includes('2 dead weight')) throw new Error('per-host summary missing');
   if (!out.includes('(last 30d)')) throw new Error('over-time window label missing');
   if (!out.includes('4 calls')) throw new Error('used-server call count missing');
   if (!out.includes('●live')) throw new Error('live badge missing on currently-active server');
-  if (!out.includes('unused · 30d')) throw new Error('over-time dead-weight marker missing');
+  if (!out.includes('never called')) throw new Error('"never called" marker missing for the never-used server (turn-off candidate)');
+  if (!txt.includes('unused · last used')) throw new Error('stale "last used N ago" marker missing for the long-ago server');
+  if (!txt.includes('turn-off candidate')) throw new Error('turn-off-candidates summary missing');
+  if (!out.includes('data-ctxhelp')) throw new Error('"?" /context helper button missing next to the server list');
   if (!out.includes('Set up MCP tracking')) throw new Error('setup card missing when populated');
   win._mcp = null;
+});
+
+// 9n2) the /context helper (📐): explains how to see REAL MCP token usage via Claude Code's /context command
+check('ctxHelpBody explains /context for real MCP token usage', () => {
+  if (typeof ctx.ctxHelpBody !== 'function') throw new Error('ctxHelpBody() not defined');
+  const b = ctx.ctxHelpBody();
+  if (!b.includes('/context')) throw new Error('ctxHelpBody must reference the /context command');
+  if (!b.includes('MCP tools')) throw new Error('ctxHelpBody should mention the MCP tools bucket /context shows');
+  if (!/data-copy="\/context"/.test(b)) throw new Error('ctxHelpBody should offer a copyable /context command');
 });
 
 // 9o) renderMcp context-floor card (MCP tax Slice 3): real-billed prefix, Sharp-zone framing, honesty caveats
