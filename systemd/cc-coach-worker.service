@@ -1,0 +1,18 @@
+[Unit]
+Description=cc-observability coach worker (V8: generates in-app coaching with the user's own Claude / local Ollama)
+After=cc-collector.service network.target
+Wants=cc-collector.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/git/jaid-observability-platform
+# Shares the SAME .env as the Docker collector, so CC_INGEST_TOKEN matches automatically.
+# CC_DASHBOARD_URL defaults to http://localhost:8099. Engine defaults to auto (claude CLI if present, else
+# Ollama if CC_OLLAMA_URL is set, else off). Set COACH_ENGINE / CC_OLLAMA_URL in .env to override.
+EnvironmentFile=-%h/git/jaid-observability-platform/.env
+ExecStart=/usr/bin/python3 %h/git/jaid-observability-platform/coach_worker.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

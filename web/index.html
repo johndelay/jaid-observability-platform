@@ -1,0 +1,2608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CC Triage">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<title>Claude Code — Triage</title>
+<style>
+  /* ---- pinball-inspired palette (coral/cyan on deep navy) ----
+     Coral/cyan on deep navy. NOTE: arcade titles use --font-display, a system stack that APPROXIMATES
+     Orbitron. We deliberately do NOT pull Google Fonts (third-party egress breaks offline/LAN + the
+     project's no-egress principle). To go full-Orbitron later: vendor Orbitron.woff2 into web/ and set
+     --font-display to it — one-line swap, no other change. */
+  :root{
+    --bg:#1a1a2e; --card:#16213e; --card2:#1f2b4d; --txt:#eaf0fb;
+    --muted:#8b9bc4; --line:#2a3a5c;
+    --green:#00ff88; --amber:#f7931e; --red:#ff3366; --blue:#00d9ff;
+    --primary:#ff6b35; --secondary:#f7931e; --accent:#00d9ff;
+    --font-display:"Eurostile","Bahnschrift","DIN Condensed","Oswald",
+      ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --navh:46px;   /* collapsed nav-bar tab height (scenes pad their bottom by this) */
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);overscroll-behavior:none;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  /* body is now a fixed-height flex column: header / fleet / carousel(grows) — scenes scroll internally */
+  body{display:flex;flex-direction:column;overflow:hidden;transition:background .2s;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+  body.alarm{background:#3a1430}
+
+  header{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:11px 14px;
+    background:linear-gradient(180deg,rgba(22,33,62,.96),rgba(22,33,62,.78));
+    border-bottom:2px solid var(--primary);box-shadow:0 3px 18px rgba(255,107,53,.28);z-index:5}
+  #menubtn{background:transparent;border:0;color:var(--accent);font-size:20px;line-height:1;
+    padding:2px 4px;cursor:pointer;text-shadow:0 0 8px rgba(0,217,255,.5)}
+  header .t{font-family:var(--font-display);font-size:15px;font-weight:800;letter-spacing:1.5px;
+    text-transform:uppercase;background:linear-gradient(90deg,var(--primary),var(--secondary),var(--accent));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  #conn{margin-left:auto;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  #dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:.3s}
+  #dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+
+  /* ---- scene carousel ---- */
+  #carousel{flex:1 1 auto;overflow:hidden;position:relative}
+  #track{display:flex;height:100%;will-change:transform;transition:transform .32s cubic-bezier(.4,0,.2,1)}
+  /* each scene is EXACTLY one viewport wide (so translateX(-i*100%) lands cleanly); content is centred to
+     ~780px on wide screens via auto side-padding rather than max-width (which would shrink the flex item). */
+  .scene{flex:0 0 100%;min-width:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    display:flex;flex-direction:column;gap:14px;
+    padding:14px max(14px,(100% - 780px)/2) calc(var(--navh) + 14px + env(safe-area-inset-bottom))}
+
+  /* ---- NEEDS YOU hero ---- */
+  .needs{border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  .needs.hot{border-color:rgba(248,81,73,.5);box-shadow:0 0 0 1px rgba(248,81,73,.25),0 8px 30px rgba(248,81,73,.12)}
+  .needs .h{display:flex;align-items:center;gap:10px;padding:14px 16px;font-weight:800;font-size:18px}
+  .needs.hot .h{color:var(--red)}
+  .needs.clear .h{color:var(--green)}
+  .needs .h .n{margin-left:auto;font-variant-numeric:tabular-nums}
+  .witem{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center;
+    padding:12px 16px;border-top:1px solid var(--line);background:var(--card)}
+  .witem .who{font-size:16px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .witem .sub{grid-column:2;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .witem .wait{font-size:13px;font-weight:800;color:var(--amber);text-align:right;font-variant-numeric:tabular-nums}
+  .witem .wait small{display:block;font-size:.62em;color:var(--muted);font-weight:600}
+  .clearmsg{padding:6px 16px 16px;color:var(--muted);font-size:13px}
+
+  /* ---- suggestions / reading card ---- */
+  .suggest{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;font-size:13px}
+  .suggest .sg-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .suggest .sg-hd h3{margin:0;font-size:12px;color:var(--accent);font-weight:800;letter-spacing:.3px;text-transform:uppercase}
+  .suggest .sg-tag{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;background:var(--card2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  .suggest .sg-title{font-weight:700;color:var(--txt);margin:2px 0 1px}
+  .suggest .sg-blurb{font-size:12px;color:var(--muted);line-height:1.4;margin:0 0 6px}
+  .suggest .sg-footer{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .suggest .sg-nav{display:flex;align-items:center;gap:8px}
+  .suggest .sg-navbtn{background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);cursor:pointer;
+    font-size:13px;padding:1px 7px;line-height:1.4}
+  .suggest .sg-navbtn:hover{color:var(--txt)}
+  .suggest .sg-dots{display:flex;gap:4px;align-items:center}
+  .suggest .sg-dot{width:5px;height:5px;border-radius:50%;background:var(--line)}
+  .suggest .sg-dot.on{background:var(--accent)}
+  .suggest .sg-opt{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+  .suggest .sg-opt input{margin:0}
+  .suggest .sg-read{color:var(--accent);font-weight:700;font-size:12px;text-decoration:none}
+  .suggest .sg-read:hover{text-decoration:underline}
+  /* ---- summary strip ---- */
+  .summary{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{flex:1;min-width:90px;background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:10px 12px;text-align:center}
+  .chip b{display:block;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+  .chip span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .chip.warn b{color:var(--amber)} .chip.crit b{color:var(--red)}
+
+  /* ---- per-account plan rate-limit gauges (5h + 7d), one labeled row per Claude account ---- */
+  .ratelimits{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .rlgroup{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .rlgroup .chip{flex:1}
+  .rlacct{flex:0 0 auto;min-width:96px;font-size:11px;font-weight:700;color:var(--muted);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ---- account chips (top-bar filter): replaces machine names; tap to filter the app to one account ---- */
+  #accounts{flex:0 0 auto;display:flex;gap:7px;flex-wrap:wrap;align-items:center;
+    padding:9px max(14px,(100% - 780px)/2) 2px;width:100%}
+  #accounts[hidden]{display:none}
+  .achip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);
+    background:var(--card);border:1px solid var(--line);border-radius:20px;padding:5px 12px;cursor:pointer;
+    font-family:inherit;line-height:1}
+  .achip i{width:9px;height:9px;border-radius:50%;background:hsl(var(--h),70%,55%);
+    box-shadow:0 0 6px hsl(var(--h),70%,55%);flex:0 0 auto}
+  .achip.on{color:var(--txt);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 12px rgba(0,217,255,.25)}
+  .achip .ac{font-size:10px;background:var(--card2);border-radius:8px;padding:1px 6px;color:var(--muted)}
+
+  /* ---- fleet reporting-health strip (P4): one chip per known host + auth-rejection warnings ---- */
+  .fleet{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px 0;max-width:780px;margin:0 auto}
+  .fleet[hidden]{display:none}
+  .hchip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--muted);
+    background:var(--card);border:1px solid var(--line);border-radius:20px;padding:4px 10px}
+  .hchip .hn{color:var(--txt)} .hchip .hs{font-weight:600;color:var(--muted)}
+  .hchip i{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .hchip i.green{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .hchip i.amber{background:var(--amber)}
+  .hchip i.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+  .hchip.red{color:var(--red);border-color:rgba(248,81,73,.4)}
+
+  /* ---- session rows ---- */
+  .sect{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:4px 2px -4px}
+  .row{display:grid;grid-template-columns:auto 1fr auto;gap:3px 10px;align-items:center;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+  .row.stale{opacity:.5}
+  .row .who{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .pct{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;text-align:right}
+  .row .mini{grid-column:1/-1;height:6px;border-radius:4px;background:var(--card2);overflow:hidden;margin-top:2px}
+  .row .mini i{display:block;height:100%;border-radius:4px}
+  /* dumb-zone clarity pip: SOFT, separate from the compaction bar. The dot fills clockwise (conic) with
+     the clarity hue; remainder faint. Deliberately small + muted — a heads-up, never an alarm. */
+  .dz-pip{display:inline-flex;align-items:center;gap:3px;margin-left:6px;vertical-align:middle;
+    font-size:11px;line-height:1;opacity:.85;flex:0 0 auto}
+  .dz-pip .dot{width:9px;height:9px;border-radius:50%;
+    background:conic-gradient(var(--c,var(--amber)) calc(var(--f,0)*360deg), rgba(255,255,255,.10) 0)}
+  .row .sub{grid-column:1/-1;display:flex;justify-content:space-between;font-size:10px;color:var(--muted);
+    font-variant-numeric:tabular-nums}
+  .row .run{color:var(--green);font-weight:700}
+
+  /* badges / pills */
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--txt)}
+  .badge i{width:9px;height:9px;border-radius:50%;background:hsl(var(--h),70%,55%);flex:0 0 auto;
+    box-shadow:0 0 6px hsl(var(--h),70%,55%)}
+  .pill{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;border-radius:5px;
+    padding:1px 6px;border:1px solid var(--line);color:var(--muted)}
+  .pill.working{color:var(--green);border-color:rgba(63,185,80,.4)}
+  .pill.waiting{color:var(--amber);border-color:rgba(210,153,34,.4)}
+  .pill.idle{color:var(--muted)}
+  .tag{font-size:9px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 5px;margin-left:5px}
+  .empty{color:var(--muted);text-align:center;padding:50px 20px;font-size:14px}
+
+  .witem,.row{cursor:pointer}
+  /* ---- drill-in overlay ---- */
+  .overlay{position:fixed;inset:0;background:var(--bg);z-index:20;display:flex;flex-direction:column;
+    padding-top:env(safe-area-inset-top)}
+  .overlay[hidden]{display:none}
+  .dhead{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  #dback{background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:8px;
+    padding:6px 12px;font-size:13px;font-weight:700}
+  #dtitle{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;overflow:hidden}
+  #dstats{padding:12px 16px;border-bottom:1px solid var(--line)}
+  #dstats .drow{font-size:14px;margin:3px 0} #dstats .drow b{font-size:20px;font-variant-numeric:tabular-nums}
+  .muted{color:var(--muted)}
+  .dlabel{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:10px 16px 6px;
+    display:flex;justify-content:space-between}
+  .stream{flex:1;overflow-y:auto;padding:0 14px calc(30px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;gap:8px}
+  /* ---- answer-from-phone reply bar ---- */
+  #dreply{border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;gap:6px;background:var(--card)}
+  #dreply[hidden]{display:none}
+  .rrow{display:flex;gap:8px;align-items:flex-end}
+  #rtext{flex:1;resize:none;min-height:40px;max-height:120px;padding:9px 11px;font-size:15px;font-family:inherit;
+    border-radius:10px;border:1px solid var(--line);background:var(--card2);color:var(--txt);user-select:text}
+  #rsend{padding:10px 16px;font-size:14px;font-weight:700;border:0;border-radius:10px;background:var(--green);
+    color:var(--bg);white-space:nowrap}
+  #rsend:disabled{opacity:.5}
+  #rmsg{font-size:11px;min-height:14px;color:var(--muted)}
+  #rmsg.ok{color:var(--green)} #rmsg.err{color:var(--red)}
+  .ai{font-size:13px;line-height:1.45;border-radius:10px;padding:8px 11px;white-space:pre-wrap;word-break:break-word}
+  .ai.text{background:var(--card)}
+  .ai.think{background:#16201a;color:#a9c7b0;font-style:italic}
+  .ai.tool{background:var(--card2);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  .ai.res{background:#14181f;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  .ai.res.err{color:var(--red)}
+  .ai.ask{background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.45);color:#f0d9a8}
+  .ai.ask .opts{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+  .ai.ask .opt{font-size:12px;background:var(--card2);border:1px solid var(--line);border-radius:7px;padding:3px 8px;color:var(--txt)}
+  /* one-line "what's being asked" preview on a NEEDS-YOU hero card */
+  .witem .ask{grid-column:1/-1;font-size:12px;color:#f0d9a8;background:rgba(210,153,34,.1);
+    border-radius:8px;padding:5px 9px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  #awake{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));
+    font-size:11px;color:var(--muted);background:rgba(21,26,35,.9);border:1px solid var(--line);
+    border-radius:20px;padding:6px 14px;backdrop-filter:blur(4px)}
+  #awake.on{color:var(--green);border-color:rgba(0,255,136,.4)}
+
+  /* ---- hidden nav bar (monitor / non-touch): collapsed tab → expands to a control strip ---- */
+  .navbar{position:fixed;left:0;right:0;bottom:0;z-index:15;background:rgba(22,33,62,.96);
+    border-top:1px solid var(--line);backdrop-filter:blur(6px);
+    padding-bottom:env(safe-area-inset-bottom);transition:transform .25s ease}
+  .navbar.collapsed{transform:translateY(calc(100% - var(--navh)))}
+  .navrow{display:flex;align-items:center;gap:8px;height:var(--navh);padding:0 12px}
+  .navbar button{background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:9px;
+    font-size:14px;font-weight:700;padding:7px 11px;cursor:pointer;line-height:1}
+  .navbar button:hover{border-color:var(--accent)}
+  #navtoggle{background:transparent;border:0;color:var(--accent);font-size:13px;padding:6px}
+  #navlabel{font-family:var(--font-display);font-size:12px;letter-spacing:.8px;text-transform:uppercase;
+    color:var(--muted);white-space:nowrap}
+  .navspring{flex:1}
+  .dots{display:flex;gap:6px;align-items:center}
+  .dots i{width:7px;height:7px;border-radius:50%;background:var(--line);transition:.2s;cursor:pointer}
+  .dots i.on{background:var(--accent);box-shadow:0 0 7px var(--accent);transform:scale(1.25)}
+
+  /* ---- hamburger menu overlay (shell — sections wired in Phase 3) ---- */
+  .menu{position:fixed;inset:0;z-index:25;background:rgba(10,12,22,.72);backdrop-filter:blur(3px);
+    display:flex;justify-content:flex-start}
+  .menu[hidden]{display:none}
+  .menupanel{width:min(340px,86vw);height:100%;overflow-y:auto;background:var(--bg);
+    border-right:2px solid var(--primary);box-shadow:6px 0 30px rgba(0,0,0,.5);
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:6px;
+    animation:slidein .22s ease}
+  @keyframes slidein{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+  .menuhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .menuhead .mt{font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:1px;
+    text-transform:uppercase;color:var(--accent)}
+  #menuclose{background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:8px;
+    padding:5px 11px;font-size:14px;font-weight:700;cursor:pointer}
+  .msect{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);
+    margin:14px 2px 4px;border-bottom:1px solid var(--line);padding-bottom:4px}
+  .mrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;
+    background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px}
+  .mrow .ml{display:flex;align-items:center;gap:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mrow.soon{opacity:.5}
+  .mrow .tag{margin-left:0}
+  /* a small toggle switch reused by menu options */
+  .sw{flex:0 0 auto;width:38px;height:22px;border-radius:12px;background:var(--card2);border:1px solid var(--line);
+    position:relative;cursor:pointer;transition:.2s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+    background:var(--muted);transition:.2s}
+  .sw.on{background:rgba(0,255,136,.25);border-color:var(--green)}
+  .sw.on::after{left:18px;background:var(--green);box-shadow:0 0 6px var(--green)}
+
+  /* ---- centered modal (🧩 MCP help) ---- */
+  .modal{position:fixed;inset:0;z-index:30;background:rgba(10,12,22,.78);backdrop-filter:blur(4px);
+    display:flex;align-items:center;justify-content:center;padding:16px}
+  .modal[hidden]{display:none}
+  .modalpanel{width:min(580px,95vw);max-height:90vh;overflow-y:auto;background:var(--bg);
+    border:2px solid var(--primary);border-radius:16px;box-shadow:0 14px 55px rgba(0,0,0,.6);
+    padding:0 18px calc(18px + env(safe-area-inset-bottom));animation:popin .2s ease}
+  @keyframes popin{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+  .modalhead{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;
+    gap:10px;background:var(--bg);padding:14px 0 8px;margin-bottom:2px;border-bottom:1px solid var(--line)}
+  .modalhead h3{margin:0;font-family:var(--font-display);font-size:14px;letter-spacing:.6px;
+    text-transform:uppercase;color:var(--accent)}
+  .modalclose{flex:0 0 auto;background:var(--card2);color:var(--txt);border:1px solid var(--line);
+    border-radius:8px;width:30px;height:30px;font-size:15px;font-weight:700;cursor:pointer}
+  .modal h4{margin:15px 0 3px;font-size:13px;font-weight:700;color:var(--txt)}
+  .modal p{font-size:12.5px;line-height:1.55;color:var(--muted);margin:4px 0}
+  .modal ol,.modal ul{margin:4px 0;padding-left:19px}
+  .modal li{font-size:12.5px;line-height:1.55;color:var(--muted);margin:3px 0}
+  .modal code:not(.hcmd){background:var(--card2);border:1px solid var(--line);border-radius:4px;
+    padding:1px 4px;font-size:11px;color:var(--accent)}
+  .modal .note{font-size:11.5px;color:var(--muted);border-left:2px solid var(--primary);
+    padding:4px 0 4px 9px;margin:8px 0;line-height:1.5}
+  /* clickable copy block — single or multi-line; the ⧉ label stays unselectable */
+  code.hcmd{position:relative;display:block;background:var(--card2);border:1px solid var(--line);
+    border-radius:8px;padding:9px 62px 9px 10px;margin:6px 0;font-size:11px;white-space:pre-wrap;
+    word-break:break-word;line-height:1.5;color:var(--txt);cursor:pointer;user-select:all}
+  code.hcmd .cp{position:absolute;top:6px;right:6px;font-size:10px;font-weight:700;color:var(--muted);
+    background:var(--card);border:1px solid var(--line);border-radius:6px;padding:2px 7px;user-select:none}
+  /* the ? help affordance on the 🧩 scene header */
+  .mcphead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .helpq{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--card2);
+    border:1px solid var(--primary);color:var(--accent);font-size:15px;font-weight:800;cursor:pointer}
+
+  /* ---- Help / Legend scene ---- */
+  .legend h2{font-family:var(--font-display);font-size:18px;letter-spacing:1px;text-transform:uppercase;
+    margin:6px 0 2px;background:linear-gradient(90deg,var(--primary),var(--accent));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .legend p.intro{color:var(--muted);font-size:13px;margin:0 0 6px;line-height:1.5}
+  .lcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+  .lcard h3{margin:0 0 6px;font-size:13px;color:var(--accent);font-weight:800;letter-spacing:.3px}
+  .hmtoggle{float:right;display:inline-flex;gap:4px}
+  .hmbtn{font:inherit;font-size:10px;font-weight:700;letter-spacing:.2px;padding:2px 7px;border-radius:999px;
+    border:1px solid var(--line);background:var(--card2);color:var(--muted);cursor:pointer}
+  .hmbtn.on{background:var(--accent);color:#06121a;border-color:var(--accent)}
+  .mxleg{float:right;display:inline-flex;gap:8px;font-size:10px;font-weight:600;color:var(--muted)}
+  .mxk{display:inline-flex;align-items:center;gap:3px}
+  .mxk i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .roirow{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;font-size:12px;margin:5px 0}
+  .roirow .hl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
+  .roirow .rv{color:var(--txt);font-variant-numeric:tabular-nums}.roirow .rv.muted{color:var(--muted)}
+  .caphdr{font-size:11px;font-weight:700;color:var(--muted);margin:8px 0 2px}
+  .lterm{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12.5px;line-height:1.4}
+  .lterm dt{font-weight:800;color:var(--txt);white-space:nowrap}
+  .lterm dd{margin:0;color:var(--muted)}
+  .lterm dd b{color:var(--txt);font-weight:700}
+  .legend .foot{color:var(--muted);font-size:11px;text-align:center;padding:6px 0 0}
+  /* History scene: trend arrows + bar charts */
+  .trend{font-size:12px;color:var(--muted);margin:0 0 2px} .trend b{color:var(--txt)}
+  .tr{font-weight:800;font-variant-numeric:tabular-nums}
+  .tr.up{color:var(--amber)} .tr.down{color:var(--green)} .tr.flat{color:var(--muted)}
+  .hbar{display:grid;grid-template-columns:92px 1fr auto;gap:8px;align-items:center;font-size:12px;margin:5px 0}
+  .hbar .hl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
+  .hbar .ht{height:8px;border-radius:4px;background:var(--card2);overflow:hidden}
+  .hbar .ht i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--accent),var(--primary))}
+  .hbar .hv{font-variant-numeric:tabular-nums;color:var(--muted)}
+  /* trophy case (Phase 8 medals) */
+  .medals{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:6px}
+  .medal{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+  .medal.locked{opacity:.5}
+  .medal .mtop{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--txt)}
+  .medal .mtop .mi{font-size:18px}
+  .medal .mtier{margin-left:auto;font-size:11px;font-weight:800}
+  .medal .mt{height:6px;border-radius:3px;background:var(--bg);overflow:hidden;margin:6px 0 3px}
+  .medal .mt i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--primary))}
+  .medal .md{font-size:10.5px;color:var(--muted);line-height:1.3}
+  /* fleet-scene per-host status dot */
+  .hdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;background:var(--muted)}
+  .hdot.green{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .hdot.amber{background:var(--amber)}
+  .hdot.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+  /* drill-in resume hint */
+  .resume{margin-top:10px}
+  .resume .rl{font-size:11px;color:var(--muted);margin-bottom:4px}
+  .resume code{display:flex;align-items:center;gap:8px;justify-content:space-between;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:var(--accent);
+    background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:8px 11px;cursor:pointer;
+    user-select:all;overflow-x:auto;white-space:nowrap}
+  .resume .cp{flex:0 0 auto;font-size:10px;font-weight:700;color:var(--muted);background:var(--card);
+    border:1px solid var(--line);border-radius:6px;padding:2px 7px;user-select:none}
+  /* drill-in actions (archive / un-hide) + Archive scene un-hide button */
+  .dactions{margin-top:12px}
+  .dactions button,.ubtn{font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;
+    background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:8px 12px}
+  .dactions button:hover,.ubtn:hover{border-color:var(--accent)}
+  .ubtn{font-size:11px;padding:5px 9px}
+  /* context-health "dumb zone" banner (drill-in) */
+  .zone{display:flex;flex-direction:column;gap:2px;border-radius:10px;padding:9px 12px;margin-bottom:10px;
+    border:1px solid var(--line);background:var(--card2)}
+  .zone .zl{font-family:var(--font-display);font-size:13px;font-weight:800;letter-spacing:.5px}
+  .zone .za{font-size:12px;color:var(--muted)}
+  .zone.z-sharp,.zone.z-good{border-color:rgba(0,255,136,.4)}  .zone.z-sharp .zl,.zone.z-good .zl{color:var(--green)}
+  .zone.z-drift{border-color:rgba(247,147,30,.5)}              .zone.z-drift .zl{color:var(--amber)}
+  .zone.z-danger,.zone.z-auto{border-color:rgba(255,51,102,.55);background:rgba(255,51,102,.08)} .zone.z-danger .zl,.zone.z-auto .zl{color:var(--red)}
+  /* drill-in context-trajectory sparkline */
+  .spark{margin:8px 0;border:1px solid var(--line);border-radius:9px;padding:7px 9px;background:var(--card2)}
+  .spark .sl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:2px}
+  /* drill-in behavioral-events line (Phase 6) */
+  .evrow{font-size:12px;color:var(--muted);margin:6px 0;display:flex;flex-wrap:wrap;gap:3px 12px}
+  /* drill-in MCP observed-usage chips (MCP tax, Slice 1) */
+  .mcprow{font-size:12px;margin:6px 0;display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .mcprow .mcphdr{color:var(--muted);font-weight:700;margin-right:4px}
+  .mcpchip{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:1px 7px;color:var(--txt);font-variant-numeric:tabular-nums}
+  .mcpchip.err{border-color:var(--red);color:var(--red)}
+  /* 🧩 MCP scene rows */
+  .mcpsrv{display:grid;grid-template-columns:16px 1fr auto;gap:8px;align-items:center;font-size:13px;padding:3px 0;border-top:1px solid var(--line)}
+  .mcpsrv:first-of-type{border-top:none}
+  .mcpsrv.dead{opacity:.66}
+  .mcpsrv .ms-st{text-align:center;font-weight:700}
+  .mcpsrv .ms-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mcpsrv .ms-use{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+  .mcpsrv .ms-dead{color:var(--amber)}
+  code.mcpcmd{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px;word-break:break-all;margin:4px 0;cursor:pointer;user-select:all}
+  code.mcpcmd .cp{flex:0 0 auto;cursor:pointer;user-select:none}
+  /* 🧠 Coach scene (V8) */
+  .cnarr{white-space:normal;line-height:1.5;font-size:14px;color:var(--txt)}
+  .apick{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+  .apgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+  .apk{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 4px;text-align:center}
+  .apk span{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .apk b{font-size:15px;font-variant-numeric:tabular-nums}
+  .apmix{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:4px 0;background:var(--card)}
+  .apseg{display:block;height:100%}
+  .genbtn{width:100%;margin-top:8px;padding:10px;border:1px solid var(--accent);border-radius:8px;background:var(--card);color:var(--accent);font-weight:700;font-size:13px;cursor:pointer}
+  .genbtn[disabled]{opacity:.6;cursor:default;border-color:var(--line);color:var(--muted)}
+  /* 🔍 Search scene (V9) — the lone content-bearing scene */
+  .dosnap{background:rgba(248,81,73,.12);border:1px solid var(--red);color:var(--red);border-radius:10px;
+    padding:9px 11px;font-size:12px;font-weight:600;margin-bottom:12px;text-align:left}
+  .sul{color:var(--muted);font-size:12px;text-align:left;margin:6px 0 10px 18px;line-height:1.5}
+  .srow{display:flex;gap:8px;align-items:center}
+  #search-q{flex:1;min-width:0;padding:10px 12px;font-size:14px;border-radius:8px;border:1px solid var(--line);
+    background:var(--bg);color:var(--fg);box-sizing:border-box}
+  .genbtn.sgo{width:auto;margin-top:0;padding:10px 16px;white-space:nowrap}
+  .shit{border-top:1px solid var(--line);padding:9px 0}
+  .shmeta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;color:var(--muted);margin-bottom:4px}
+  .shmeta .sproj{font-weight:700;color:var(--fg)}
+  .shmeta .skind{text-transform:uppercase;letter-spacing:.04em;font-size:9px;background:var(--card);
+    border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .snip{font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--fg)}
+  .snip mark{background:rgba(63,185,80,.25);color:inherit;border-radius:2px;padding:0 1px}
+  .linklike{background:none;border:0;color:var(--accent);font:inherit;cursor:pointer;padding:0;text-decoration:underline}
+  .ulink{color:var(--accent);text-decoration:underline;word-break:break-all;user-select:text;-webkit-user-select:text}
+  .shit{cursor:pointer}
+  .shit:hover{background:rgba(255,255,255,.03)}
+  .shit .sopen{margin-left:auto;color:var(--accent);font-weight:700}
+  /* 🔍 conversation reader overlay */
+  #convobody{display:flex;flex-direction:column;gap:2px}
+  .cvb{padding:8px 10px;border-radius:8px;background:var(--card)}
+  .cvb.cvhit{background:rgba(63,185,80,.10);outline:1px solid var(--accent)}
+  .cvwho{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px}
+  .cvtext{font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--fg);user-select:text;-webkit-user-select:text}
+  .cvtext mark{background:rgba(63,185,80,.30);color:inherit;border-radius:2px;padding:0 1px}
+  .cvmore{margin:6px 0}
+  .sfilters{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .schips{display:flex;flex-wrap:wrap;gap:6px}
+  .fchip{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;cursor:pointer;
+    border:1px solid var(--line);background:var(--card);color:var(--muted)}
+  .fchip.on{border-color:var(--accent);color:var(--accent);background:rgba(63,185,80,.10)}
+  .smode{display:flex;gap:6px;margin-bottom:8px}
+  .mchip{flex:1;font-size:12px;font-weight:700;padding:7px 0;border-radius:8px;cursor:pointer;
+    border:1px solid var(--line);background:var(--card);color:var(--muted)}
+  .mchip.on{border-color:var(--accent);color:var(--accent);background:rgba(63,185,80,.10)}
+  .mchip.off{opacity:.55}
+  .enote{margin-top:6px}
+  .shmeta .sscore{color:var(--accent);font-weight:700}
+  .mrow{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+  .mrow b{color:var(--fg)}
+  #updatebar{margin:8px 12px;padding:8px 12px;border-radius:8px;background:rgba(0,217,255,.10);
+    border:1px solid var(--accent);color:var(--fg);font-size:12px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+  #updatebar code{user-select:all;font-family:ui-monospace,Menlo,monospace}
+  #updatebar .x{cursor:pointer;opacity:.7}
+</style>
+</head>
+<body>
+<header>
+  <button id="menubtn" aria-label="Open menu">☰</button>
+  <span class="t" id="apptitle">Claude Code</span>
+  <span id="conn"><span id="dot"></span><span id="ctext">connecting…</span></span>
+</header>
+<div id="accounts" hidden></div>
+<div id="updatebar" style="display:none"></div>
+<div id="fleet" class="fleet" hidden></div>
+
+<div id="carousel">
+  <div id="track">
+    <!-- scene 0: Triage (render() fills #app) -->
+    <main id="app" class="scene"><div class="empty">Waiting for sessions…</div></main>
+
+    <!-- scene 1: Cost & Accounts (renderCost() fills it) -->
+    <section id="scene-cost" class="scene legend"><div class="empty">Loading cost &amp; accounts…</div></section>
+
+    <!-- scene 2: History / Trophy Room (renderHistory() fills it) -->
+    <section id="scene-history" class="scene legend"><div class="empty">Loading history…</div></section>
+
+    <!-- scene: Trophy Room — all-time vanity totals + streaks + cache savings (renderTrophy() from /report) -->
+    <section id="scene-trophy" class="scene legend"><div class="empty">Loading trophy room…</div></section>
+
+    <!-- scene: Craft Score (renderCraft() fills it from /craft) -->
+    <section id="scene-craft" class="scene legend"><div class="empty">Loading Craft Score…</div></section>
+
+    <!-- scene: 🧠 Coach — AI coaching (Claude Code handoff now; in-app narrative next) + Session Autopsy (renderCoach() from /coach + /autopsy) -->
+    <section id="scene-coach" class="scene legend"><div class="empty">Loading coach…</div></section>
+
+    <!-- scene: Efficiency coach — what-if model-downgrade savings (renderEfficiency() from /efficiency) -->
+    <section id="scene-efficiency" class="scene legend"><div class="empty">Loading efficiency…</div></section>
+
+    <!-- scene: 🧩 MCP tax — configured servers vs. observed usage / dead weight (renderMcp() from /mcp) -->
+    <section id="scene-mcp" class="scene legend"><div class="empty">Loading MCP…</div></section>
+
+    <!-- scene 3: Fleet / Hosts (renderFleetScene() fills it) -->
+    <section id="scene-fleet" class="scene legend"><div class="empty">Loading fleet…</div></section>
+
+    <!-- scene 3: Archive / hidden sessions (renderArchive() fills it) -->
+    <section id="scene-archive" class="scene legend"><div class="empty">Nothing archived.</div></section>
+
+    <!-- scene: 🔍 Search — V9 local transcript full-text recovery. The ONE content-bearing scene: local-only
+         (served on the loopback content port), opt-in, do-not-screenshot. renderSearch() from /search-meta + /search -->
+    <section id="scene-search" class="scene legend"><div class="empty">Loading search…</div></section>
+
+    <!-- scene: 🧹 Maintenance — V13 data lifecycle: storage, encrypted export/import, prune/vacuum.
+         Screenshot-safe (sizes/counts only). renderMaint() from /maintenance. -->
+    <section id="scene-maint" class="scene legend"><div class="empty">Loading maintenance…</div></section>
+
+    <!-- scene: ℹ️ About — project identity, vendor-generic disclaimer, license, version. Screenshot-safe. -->
+    <section id="scene-about" class="scene legend"><div class="empty">Loading…</div></section>
+
+    <!-- scene 4: Help / Legend — static glossary (attacks the "foreign to new users" problem;
+         also the touch-friendly answer to "no hover tooltips on mobile") -->
+    <section id="scene-help" class="scene legend">
+      <h2>What am I looking at?</h2>
+      <p class="intro">This board watches your Claude Code sessions across every machine and tells you,
+        at a glance, <b>which ones need you</b> and <b>how much runway each has left</b>. Swipe between
+        scenes, or use the bar at the bottom on a monitor.</p>
+
+      <div class="lcard"><h3>The Triage board</h3><dl class="lterm">
+        <dt>Needs you</dt><dd>Sessions <b>waiting on your input</b> (a question, a permission, a choice). These float to the top so nothing stalls unseen.</dd>
+        <dt>working / waiting / idle</dt><dd><b>working</b> = Claude is actively going. <b>waiting</b> = it asked you something. <b>idle</b> = quiet, nothing pending.</dd>
+        <dt>The % and bar</dt><dd>How full that session's <b>context window</b> is. Higher = closer to an auto-compaction (where older context gets summarized away).</dd>
+        <dt>⏱ ETA</dt><dd>Estimated time until this session hits compaction at its current growth rate — your runway before context gets squeezed.</dd>
+        <dt>~N left</dt><dd>Approx <b>tokens</b> remaining before compaction.</dd>
+        <dt>▸N</dt><dd>Number of <b>subagents</b> this session is currently running.</dd>
+      </dl></div>
+
+      <div class="lcard"><h3>Cost &amp; plan</h3><dl class="lterm">
+        <dt>burn</dt><dd>Recent spend rate in <b>dollars per hour</b> across active sessions.</dd>
+        <dt>today</dt><dd>Total estimated spend so far today (your timezone).</dd>
+        <dt>5h · 7d</dt><dd>How much of your plan's <b>rolling 5-hour and 7-day limits</b> you've used. <b>↺</b> shows when each window resets.</dd>
+        <dt>→ extra usage / plan limit</dt><dd>How close you are to your plan cap. If Extra Usage is on you start paying overage at 100%; if off, you get throttled.</dd>
+        <dt>~ (tilde)</dt><dd>The value is <b>approximate</b> — inferred, not exactly captured (e.g. account guessed from host login, or a cost estimate).</dd>
+      </dl></div>
+
+      <div class="lcard"><h3>Fleet health (top strip)</h3><dl class="lterm">
+        <dt>🟢 / 🟡 / 🔴</dt><dd>Per machine: is its reporter <b>fresh</b>, lagging, or <b>not checking in</b>? Lets you tell "idle but healthy" from "watcher down".</dd>
+        <dt>⚠ N rejected</dt><dd>That many report attempts were <b>refused</b> (bad/missing token) from an IP — a misconfigured or unwanted sender.</dd>
+      </dl></div>
+
+      <div class="lcard"><h3>🧠 Context health — the "dumb zone"</h3>
+        <p class="intro" style="margin:0 0 8px"><b>Two different things can go wrong, and they're not the same.</b>
+          One is <b>running out of window</b> — you hit the wall and Claude Code auto-compacts, summarizing older
+          context away; that's the <b>%</b> number on each session. The other is the <b>dumb zone</b>: as a session
+          piles up context, models <b>miss details, repeat work, and drift</b> — <i>well before</i> the window is full.
+          The 🧠 pip tracks that second risk by how much context you're <b>actually carrying</b>, not how full the window is.</p>
+        <p class="intro" style="margin:0 0 8px"><b>A warm 🧠 does NOT mean you're about to compact.</b> On a 1M window
+          you can be deep in the dumb zone at ~20% full. The fix there isn't urgency — it's a clean checkpoint
+          (<code>/compact</code> or <code>/clear</code>) when it suits you.</p>
+        <dl class="lterm">
+          <dt>🟢 Sharp</dt><dd>Plenty of headroom — Claude is at its sharpest.</dd>
+          <dt>🟡 Good</dt><dd>Healthy. Keep going.</dd>
+          <dt>🟠 Drifting</dt><dd><b>Dumb-zone onset.</b> Older details may start slipping — wrap up sub-tasks or plan a <code>/compact</code> when convenient.</dd>
+          <dt>🔴 Deep</dt><dd>Lots of accumulated context may be dulling responses. <code>/clear</code> or <code>/compact</code> restores focus. <span class="muted">(This is about <b>clarity</b>, not the window wall.)</span></dd>
+          <dt>⛔ Auto-compact</dt><dd>Separate signal: the <b>%</b> hit the window wall and Claude Code is summarizing older context away on its own.</dd>
+        </dl>
+        <p class="intro" style="margin:8px 0 0">Why absolute size, not %? On a 1M window, 20% is ~200k tokens — already
+          plenty to start drifting. <b>The window limit isn't the quality limit.</b> Compacting or clearing at a good
+          checkpoint keeps you in the green. <span class="muted">(Grounded in Context Rot, Chroma 2025; Lost-in-the-Middle,
+          Liu 2023 — a research-informed heuristic, deliberately soft: your own tool-error history shows no hard knee.
+          Toggle off in the menu if you prefer the raw number.)</span></p>
+        <!-- dumb-zone v2: data-derived knee from YOUR history (renderDrift() fills this from /drift) -->
+        <div id="drift-card"></div>
+      </div>
+
+      <p class="foot">More scenes &amp; explanations coming. Tip: tap any session for live detail and a resume command.</p>
+
+      <p class="foot">Independent project — not affiliated with or endorsed by Anthropic, Google, or any AI vendor whose products it integrates. Product names &amp; trademarks (e.g. 'Claude', 'Antigravity') belong to their owners. MIT&nbsp;License.</p>
+    </section>
+  </div>
+</div>
+
+<!-- hidden nav bar: collapsed to a thin tab; tap ▲ to reveal prev/next/dots/mute (for wall displays) -->
+<nav id="navbar" class="navbar collapsed">
+  <div class="navrow">
+    <button id="navtoggle" aria-label="Toggle nav bar">▲ nav</button>
+    <button id="navprev" aria-label="Previous scene">◄</button>
+    <span id="navlabel">Triage</span>
+    <div id="navdots" class="dots"></div>
+    <button id="navnext" aria-label="Next scene">►</button>
+    <span class="navspring"></span>
+    <button id="navmute" aria-label="Mute alerts" title="Mute alert beep/flash">🔔</button>
+  </div>
+</nav>
+
+<!-- hamburger menu (Phase-1 shell; toggles are wired in Phase 3) -->
+<div id="menu" class="menu" hidden>
+  <div class="menupanel">
+    <div class="menuhead"><span class="mt">Menu</span><button id="menuclose">✕</button></div>
+
+    <div class="msect">Scenes</div>
+    <div id="menuscenes"></div>
+
+    <div class="msect">Alerts</div>
+    <div class="mrow"><span class="ml">🔔 Mute alert beep</span><span class="sw" id="mute-sw"></span></div>
+
+    <div class="msect">Sort sessions</div>
+    <div id="menusort"></div>
+    <div class="mrow"><span class="ml">⚡ Working sessions on top</span><span class="sw" id="working-sw"></span></div>
+
+    <div class="msect">Features</div>
+    <div id="menufeat"></div>
+
+    <div class="msect">Privacy &amp; display</div>
+    <div class="mrow"><span class="ml">🕶️ Reveal real names <span class="tag">this device</span></span><span class="sw" id="reveal-sw"></span></div>
+
+    <div class="msect">Account names</div>
+    <div id="menuacct"></div>
+  </div>
+</div>
+<div id="mcphelp" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3>🧩 MCP tax — how this works</h3><button id="mcphelpclose" class="modalclose">✕</button></div>
+    <div id="mcphelpbody"></div>
+  </div>
+</div>
+<div id="convo" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3 id="convohead">🔍 Conversation</h3><button id="convoclose" class="modalclose">✕</button></div>
+    <div id="convobody"></div>
+  </div>
+</div>
+<div id="termsmodal" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3>📜 Terms &amp; License</h3><button id="termsmodalclose" class="modalclose">✕</button></div>
+    <div id="termsbody"></div>
+  </div>
+</div>
+<div id="detail" class="overlay" hidden>
+  <div class="dhead"><button id="dback">‹ back</button><div id="dtitle"></div></div>
+  <div id="dstats"></div>
+  <div class="dlabel"><span>Activity — what Claude is doing</span><span id="dlive" class="muted"></span></div>
+  <div id="dstream" class="stream"></div>
+  <div id="dreply" hidden>
+    <div class="rrow">
+      <textarea id="rtext" rows="1" placeholder="Reply to this session…" autocomplete="off"></textarea>
+      <button id="rsend">Send</button>
+    </div>
+    <div id="rmsg"></div>
+  </div>
+</div>
+<div id="awake">☾ tap anywhere to keep screen awake</div>
+<video id="nosleep" loop muted playsinline webkit-playsinline preload="auto"
+  style="position:fixed;left:-10px;top:-10px;width:1px;height:1px;opacity:0;pointer-events:none">
+  <source src="/nosleep.webm" type="video/webm"><source src="/nosleep.mp4" type="video/mp4">
+</video>
+
+<script>
+const app = document.getElementById('app');
+const dot = document.getElementById('dot');
+const ctext = document.getElementById('ctext');
+
+const ADJ=["brave","calm","swift","keen","wise","bold","sly","spry","lush","nova","zen","jade","ember","rune","fox"];
+const NOUN=["otter","falcon","lynx","koi","yak","wren","ibex","moth","fern","comet","puma","crane","heron","sage","wolf"];
+function hash(s){let h=2166136261>>>0;for(let i=0;i<(s||'').length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h;}
+function ident(sid){const h=hash(sid);return {name:ADJ[h%ADJ.length]+"-"+NOUN[(Math.floor(h/16))%NOUN.length], hue:h%360};}
+const badge=s=>{const id=ident(s.session_id);return `<span class="badge" style="--h:${id.hue}"><i></i>${id.name}</span>`;};
+
+const fmt=n=>n==null?'—':(n>=1000?(n/1000).toFixed(n>=100000?0:1)+'k':String(n));
+const usd=n=>n==null?'':'$'+(n<1?n.toFixed(3):n.toFixed(2));
+const fmtTok=n=>{n=n||0;return n>=1e9?(n/1e9).toFixed(1)+'B':n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':String(n);};
+const color=p=>p>=85?'var(--red)':p>=60?'var(--amber)':'var(--green)';
+// ---- context-health "dumb zone" (v1, static) ----
+// Degradation (Context Rot, Chroma 2025; Lost-in-the-Middle, Liu 2023) tracks ABSOLUTE accumulated context,
+// not % of window — so zones key off context_tokens, with a proximity-to-auto-compact override so a small
+// (200k-window) session at the wall still flags red. Thresholds = one tunable constant (v2 calibrates per model).
+const ZONE_TOK={good:50000, drift:120000, danger:200000};   // absolute context_tokens boundaries
+function zone(s){
+  const ctx=(s&&s.context_tokens)||0, ptc=(s&&s.pct_to_compact)||0;
+  // WINDOW WALL first — the only thing that should ever say "auto-compact". Keyed off % to compact.
+  if(ptc>=100)                       return {key:'auto',  emoji:'⛔', label:'Auto-compact',  color:'var(--red)',   advice:'At/over the window wall — Claude Code is summarizing older context away on its own.'};
+  if(ptc>=85)                        return {key:'danger',emoji:'🔴', label:'Near the wall', color:'var(--red)',   advice:'Close to the window limit — /compact now to pick your own checkpoint before auto-compact does.'};
+  // DUMB ZONE — ABSOLUTE accumulated context (Context Rot). A clarity risk, NOT the wall: never claim
+  // auto-compact is near (on a 1M window you can be deep here at ~20% full).
+  if(ctx>=ZONE_TOK.danger)           return {key:'danger',emoji:'🔴', label:'Deep',          color:'var(--red)',   advice:'Deep in the dumb zone — lots of accumulated context may dull responses. /clear or /compact restores focus. (This is about clarity, not the window wall.)'};
+  if(ctx>=ZONE_TOK.drift)            return {key:'drift', emoji:'🟠', label:'Drifting',      color:'var(--amber)', advice:'Context is filling — older details may start slipping. Wrap up sub-tasks or plan a /compact when convenient.'};
+  if(ctx>=ZONE_TOK.good)             return {key:'good',  emoji:'🟡', label:'Good',          color:'var(--green)', advice:'Healthy headroom. Keep going.'};
+  return                                    {key:'sharp', emoji:'🟢', label:'Sharp',         color:'var(--green)', advice:'Plenty of headroom — Claude is at its sharpest.'};
+}
+// ---- dumb-zone CLARITY meter (the SOFT companion to zone(), for the inline tile pip) ----
+// Maps ABSOLUTE accumulated context to fill 0..1 (0 empty → 1.0 at ~200k = ZONE_TOK.danger) and a
+// deliberately MUTED hue that ramps calm-green → soft-amber → soft-orange and NEVER reaches alarm-red.
+// Alarm-red belongs to compaction proximity (color()); this answers "is Claude getting dull?", a
+// gradual risk that grows with what you carry — not the window wall.
+function clarity(s){
+  const ctx=(s&&s.context_tokens)||0;
+  const fill=Math.max(0,Math.min(1,ctx/ZONE_TOK.danger));
+  const hue=Math.round(140-105*fill);          // 140 calm green → 35 soft orange (never red ~0)
+  const sat=Math.round(30+50*fill);            // muted when low, warmer as it grows
+  return {ctx,fill,col:`hsl(${hue},${sat}%,58%)`};
+}
+const esc=t=>(t==null?'':String(t)).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+const rel=s=>{s=Math.round(s);return s<2?'live':s<60?s+'s':Math.round(s/60)+'m';};
+const dur=s=>s==null?'':s<90?'~'+Math.round(s)+'s':s<5400?'~'+Math.round(s/60)+'m':'~'+(s/3600).toFixed(1)+'h';
+// plan rate-limits (5h + 7d) are ACCOUNT-level, not per-session — and a fleet can span >1 Claude account
+// (different reset clocks). Group by account and take the worst (max %) reading within each, so each
+// account gets its own honest gauge instead of one number that conflates two accounts. Sessions with null
+// rate_limits (watcher-only hosts, pre-statusline) skip; unknown account folds into "(unknown)".
+function rateByAccount(list){
+  const m=new Map();
+  for(const s of (list||[])){
+    const rl=s.rate_limits; if(!rl)continue;
+    const acct=s.account||'(unknown)';
+    let e=m.get(acct); if(!e){e={account:acct,five_hour:null,seven_day:null,extra_usage:null};m.set(acct,e);}
+    if(s.extra_usage!=null)e.extra_usage=s.extra_usage;   // can this account exceed its plan cap (overage)?
+    const f=rl.five_hour,w=rl.seven_day;
+    if(f&&f.used_percentage!=null&&(!e.five_hour||f.used_percentage>e.five_hour.pct))e.five_hour={pct:f.used_percentage,reset:f.resets_at};
+    if(w&&w.used_percentage!=null&&(!e.seven_day||w.used_percentage>e.seven_day.pct))e.seven_day={pct:w.used_percentage,reset:w.resets_at};
+  }
+  return [...m.values()].sort((a,b)=>(b.five_hour?.pct||0)-(a.five_hour?.pct||0));  // most-constrained first
+}
+// "Extra Usage" proximity = the BINDING window (max of 5h/7d %). At 100% you cross your plan cap → if the
+// account has Extra Usage enabled you start paying overage, else you're throttled. Its own headline metric.
+function extraUsage(a){
+  const f=a.five_hour&&a.five_hour.pct, w=a.seven_day&&a.seven_day.pct;
+  const ps=[f,w].filter(p=>p!=null);
+  if(!ps.length)return null;                      // no rate_limits (Enterprise/Console/Team) → metric N/A
+  const pct=Math.max(...ps), binds=(f!=null&&(w==null||f>=w))?'5h':'7d', eu=a.extra_usage;
+  const at=pct>=100;
+  const label=at?(eu?'in extra usage':'at plan limit'):(eu===true?'→ extra usage':eu===false?'→ plan limit':'→ plan cap');
+  return {pct:Math.round(pct), binds, eu, label, cls:pct>=85?'crit':pct>=60?'warn':''};
+}
+// ---------- per-device prefs (localStorage; guarded — the node DOM-smoke sandbox has neither
+//            localStorage nor window events, and an unguarded access there throws at load) ----------
+const LS=(()=>{try{return (typeof localStorage!=='undefined')?localStorage:null;}catch(_){return null;}})();
+const prefGet=(k,d)=>{try{const v=LS&&LS.getItem('cc.'+k);return v==null?d:JSON.parse(v);}catch(_){return d;}};
+const prefSet=(k,v)=>{try{LS&&LS.setItem('cc.'+k,JSON.stringify(v));}catch(_){}};
+
+// ---------- screenshot-safe masking ----------
+// Identifying strings (account email, project, host) render as STABLE neutral codenames by DEFAULT, so the
+// resting state of every page is already safe to screenshot. "Reveal real names" (menu, off by default,
+// per-device) un-masks on the user's own screen. Session badge names are already random codenames, not masked.
+let revealNames=prefGet('reveal',false);
+const acctShort=a=>!a?'':(a.includes('@')?a.split('@')[0]:a);
+const maskCode=raw=>(hash(String(raw)).toString(36).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,2)||'X');
+function friendlyName(cat,raw){
+  const o=prefGet('name.'+cat+'.'+raw,null); if(o)return o;            // user-set rename (3A-2) always wins
+  return (cat==='account'?'Account ':cat==='project'?'Project ':cat==='host'?'Host ':'')+maskCode(raw);
+}
+const acctDisplay=a=>!a?'':(a==='(unknown)'||a==='(unattributed)')?a:(revealNames?acctShort(a):friendlyName('account',a));
+const projDisplay=p=>!p?'?':(revealNames?p:friendlyName('project',p));
+const hostDisplay=h=>!h?'':(revealNames?h:friendlyName('host',h));
+const maskIP=ip=>revealNames?ip:'hidden sender';
+const acctLabel=a=>(!a||a==='(unknown)'||a==='(unattributed)')?'plan limits':acctDisplay(a);
+function rerenderAll(){
+  try{render(window._list||[]);}catch(_){}  try{renderCost(window._list||[]);}catch(_){}  try{renderHistory();}catch(_){}
+  try{renderFleetScene(window._hosts);}catch(_){} try{renderHosts(window._hosts);}catch(_){}
+  try{renderCoach();}catch(_){}
+  try{renderSearch();}catch(_){}
+  try{renderMaint();}catch(_){}
+  try{renderAbout();}catch(_){}
+}
+function setReveal(v){ revealNames=!!v; prefSet('reveal',revealNames); rerenderAll(); }
+
+// ---------- account filter + top-bar chips ----------
+// Replaces machine names at the top with the detected Claude accounts. Tap a chip → filter the whole app
+// to that account; tap "All" (or the active chip) → clear. Hidden when ≤1 account (nothing to filter).
+let accountFilter=prefGet('acctFilter',null);
+const accountsEl=document.getElementById('accounts');
+function accountsOf(list,cost){
+  const set=new Set(), ok=a=>a&&a!=='(unknown)'&&a!=='(unattributed)';   // skip cost-only catch-all buckets
+  (list||[]).forEach(s=>{ if(ok(s.account))set.add(s.account); });
+  ((((cost||{}).by_account))||[]).forEach(c=>{ if(ok(c.account))set.add(c.account); });
+  return [...set];
+}
+function renderAccounts(){
+  if(!accountsEl)return;
+  const list=window._list||[], accts=accountsOf(list,window._cost);
+  if(accountFilter&&!accts.includes(accountFilter)){accountFilter=null;prefSet('acctFilter',null);}   // it vanished
+  if(accts.length<=1){ accountsEl.hidden=true; accountsEl.innerHTML=''; return; }    // nothing worth filtering
+  const counts={}; list.forEach(s=>{ if(s.account)counts[s.account]=(counts[s.account]||0)+1; });
+  let h=`<button class="achip ${accountFilter?'':'on'}" data-acct="">All</button>`;
+  for(const a of accts){
+    const hue=hash(a)%360, n=counts[a]||0;
+    h+=`<button class="achip ${accountFilter===a?'on':''}" data-acct="${esc(a)}" style="--h:${hue}"><i></i>${esc(acctDisplay(a))}${n?` <span class="ac">${n}</span>`:''}</button>`;
+  }
+  accountsEl.hidden=false; accountsEl.innerHTML=h;
+}
+if(accountsEl)accountsEl.addEventListener('click',e=>{
+  const b=e.target.closest('[data-acct]'); if(!b)return;
+  const a=b.getAttribute('data-acct')||null;
+  accountFilter=(a===accountFilter)?null:a; prefSet('acctFilter',accountFilter);
+  render(window._list||[]); renderCost(window._list||[]);
+});
+
+// ---------- session sort (registry; user-chosen in the menu) ----------
+// Applies to the "Sessions" list. The Needs-You hero is ALWAYS on top (the safety headline) regardless.
+const SORTS=[
+  {id:'ctx',   label:'Context % (fullest first)', cmp:(a,b)=>(b.pct||0)-(a.pct||0)},
+  {id:'cost',  label:'Cost (highest first)',      cmp:(a,b)=>(b.cost_usd||0)-(a.cost_usd||0)},
+  {id:'recent',label:'Recent activity first',     cmp:(a,b)=>(a.age_secs||0)-(b.age_secs||0)},
+  {id:'acct',  label:'Account, then name',        cmp:(a,b)=>String(acctDisplay(a.account)).localeCompare(String(acctDisplay(b.account)))},
+];
+let sortMode=prefGet('sortMode','ctx');
+let workingOnTop=prefGet('workingOnTop',true);
+const activeSort=()=>SORTS.find(s=>s.id===sortMode)||SORTS[0];
+function sortSessions(arr){
+  const cmp=activeSort().cmp, w=s=>s.eff_state==='working'?1:0;
+  return arr.slice().sort((a,b)=>(workingOnTop?(w(b)-w(a)):0)||cmp(a,b));
+}
+
+// ---------- feature toggles (per-device) ----------
+const feat={
+  flash:      prefGet('feat.flash', true),       // flash the screen on a new waiting session
+  autorotate: prefGet('feat.autorotate', false), // cycle scenes on a timer (wall-display mode)
+  showIdle:   prefGet('feat.showIdle', true),    // include idle sessions in the Sessions list
+  showApprox: prefGet('feat.showApprox', true),  // show the "~" approximate markers
+  dumbzone:   prefGet('feat.dumbzone', true),    // context-health "dumb zone" pills/colors + advice
+  mcptax:     prefGet('feat.mcptax', true),      // 🧩 observed MCP-server usage chips in the drill-in
+};
+const FEATURE_DEFS=[
+  {k:'flash',     label:'⚡ Flash on new waiting'},
+  {k:'autorotate',label:'🎞️ Auto-rotate scenes'},
+  {k:'showIdle',  label:'💤 Show idle sessions'},
+  {k:'showApprox',label:'~ Show approximate markers'},
+  {k:'dumbzone',  label:'🧠 Context-health zones'},
+  {k:'mcptax',    label:'🧩 MCP usage chips'},
+];
+const apx=on=>(on&&feat.showApprox)?'~':'';   // gate the "~" approximate prefix
+function setFeat(k,v){ feat[k]=v; prefSet('feat.'+k,v); }
+// merge per-account rate-limits (from /state) with per-account cost-today (from /cost) into one row each.
+// approx: an account is EXACT if any live session reported it from the per-session hook; otherwise the
+// label is host-login-derived (marked with a ~ prefix) or cost-only (can't tell → approx).
+function perAccount(list, cost){
+  const m=new Map();
+  const get=a=>{let e=m.get(a); if(!e){e={account:a,five_hour:null,seven_day:null,today:null,approx:true,extra_usage:null}; m.set(a,e);} return e;};
+  for(const r of rateByAccount(list)){const e=get(r.account); e.five_hour=r.five_hour; e.seven_day=r.seven_day; e.extra_usage=r.extra_usage;}
+  for(const c of ((cost&&cost.by_account)||[])){ if(c.account&&c.cost_usd!=null) get(c.account).today=c.cost_usd; }
+  for(const s of (list||[])){ if(s.account&&m.has(s.account)&&!s.account_approx) m.get(s.account).approx=false; }
+  return [...m.values()].sort((a,b)=>(b.today||0)-(a.today||0)||((b.five_hour&&b.five_hour.pct)||0)-((a.five_hour&&a.five_hour.pct)||0));
+}
+const untilReset=ts=>{if(ts==null)return '';const s=ts-Date.now()/1000;if(s<=0)return 'now';return s<3600?Math.round(s/60)+'m':s<86400?Math.round(s/3600)+'h':Math.round(s/86400)+'d';};
+const ratechip=(g,label)=>{if(!g||g.pct==null)return '';const p=Math.round(g.pct),cls=p>=85?'crit':p>=60?'warn':'',r=untilReset(g.reset);return `<div class="chip ${cls}"><b>${p}%</b><span>${label}${r?' · '+r+' ↺':''}</span></div>`;};
+async function pollCost(){try{const r=await fetch('/cost');if(r.ok){window._cost=await r.json();renderCost(window._list||[]);renderHistory();}}catch(_){}}
+// fleet reporting-health (P4): polled independently of the session SSE so it shows even with zero sessions
+// (a totally-idle or broken watcher has no session cards — that's exactly when you need this strip).
+const fleet=document.getElementById('fleet');
+async function pollHosts(){try{const r=await fetch('/hosts');if(r.ok){window._hosts=await r.json();renderHosts(window._hosts);renderFleetScene(window._hosts);}}catch(_){}}
+function renderHosts(d){
+  // Alert-only strip now: routine (green) host chips live in the Fleet scene; the top bar shows accounts.
+  // Here we surface only PROBLEMS — a host that's lagging/not-reporting, or a rejected sender — so the
+  // "watcher down" alarm stays visible on every scene without cluttering the top with machine names.
+  d=d||{};const bad=(d.hosts||[]).filter(x=>x.status==='red'||x.status==='amber'),rej=d.rejected||[];
+  if(!bad.length&&!rej.length){fleet.hidden=true;fleet.innerHTML='';return;}
+  let h='';
+  for(const x of bad){
+    const ses=x.sessions?` <span class="hs">·${x.sessions}</span>`:'';
+    const age=` <span class="hs">·${rel(x.age_secs)}</span>`;
+    h+=`<span class="hchip ${x.status==='red'?'red':''}"><i class="${esc(x.status)}"></i><span class="hn">${esc(hostDisplay(x.host))}</span>${ses}${age}</span>`;
+  }
+  for(const x of rej){
+    h+=`<span class="hchip red"><i class="red"></i>⚠ ${esc(maskIP(x.ip))} <span class="hs">${x.count} rejected</span></span>`;
+  }
+  fleet.hidden=false;fleet.innerHTML=h;
+}
+function waited(s){
+  if(s.awaiting_input_since){const t=Date.parse(s.awaiting_input_since);if(!isNaN(t)){const m=(Date.now()-t)/1000;return rel(m);}}
+  return rel(s.age_secs);
+}
+
+let prevNeeds=new Set(), first=true, actx=null;
+function beep(){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();const o=actx.createOscillator(),g=actx.createGain();o.connect(g);g.connect(actx.destination);o.type='sine';o.frequency.value=880;g.gain.value=0.06;o.start();o.stop(actx.currentTime+0.25);}catch(_){}}
+function flash(){document.body.classList.add('alarm');setTimeout(()=>document.body.classList.remove('alarm'),1500);}
+
+// ---- Suggestions / Reading card ----
+// public gist URL for the hosted article list (opt-in fetch only — ZERO egress when checkbox is off)
+const SUGGEST_URL='https://gist.githubusercontent.com/johndelay/5127ce55fd95f44e91327fe2edb58f00/raw/';
+// bundled starter list (shown by default; replaced by fetched items when opted-in)
+const SUGGESTIONS=[
+  {kind:'article', title:'Surviving Compaction', blurb:'How context compaction silently erases constraints — and how to catch it.', url:'https://thedelay.com/surviving-compaction/', tags:['context-rot','dumb-zone','claude-code']},
+  {kind:'article', title:'Why I Treat My AI Context Like Infrastructure', blurb:'Persistent context files so AI carries across sessions, not from zero.', url:'https://thedelay.com/ai-context-infrastructure/', tags:['claude-code','general']},
+  {kind:'article', title:'Give Claude a Memory', blurb:'Persistent memory for Claude in 15 minutes with one plain-text file.', url:'https://thedelay.com/give-claude-a-memory/', tags:['claude-code','memory']},
+  {kind:'article', title:"So You're Good at AI? Build This Skill Before You Get Sued", blurb:"Sanitize AI output before publishing so you don't leak private details.", url:'https://thedelay.com/ai-sanitization-skill/', tags:['security','general']}
+];
+// in-memory cache of fetched remote article items (null = not yet fetched / not opted-in)
+let _sgFetched=null;
+// test-hook: set/read the fetched cache (lets unit tests inject/inspect without polluting window)
+function _sgSetFetched(arr){ _sgFetched=arr; }
+function _sgGetFetched(){ return _sgFetched; }
+// load cached items from localStorage on startup if the user is opted-in (avoids a blank card before fetch resolves)
+(()=>{try{if(prefGet('suggest.fetch',false)){const raw=LS&&LS.getItem('cc.suggest.cache');if(raw){const arr=JSON.parse(raw);if(Array.isArray(arr))_sgFetched=arr;}}}catch(_){}})();
+// validate and sanitize a single item from untrusted remote JSON
+function _sgSanitizeItem(it){
+  if(!it||typeof it!=='object')return null;
+  const title=typeof it.title==='string'?it.title.slice(0,200):'';
+  const blurb=typeof it.blurb==='string'?it.blurb.slice(0,400):'';
+  const url=typeof it.url==='string'&&/^https?:\/\//i.test(it.url.trim())?it.url.trim():null;
+  const tags=Array.isArray(it.tags)?it.tags.filter(t=>typeof t==='string').map(t=>t.slice(0,50)):[];
+  if(!title&&!url)return null; // drop empty/unusable items
+  return {kind:'article',title,blurb,url,tags};
+}
+// fetch the hosted list; on success replace bundled articles + cache; on failure stay silent
+function _sgFetch(){
+  fetch(SUGGEST_URL).then(r=>{
+    if(!r.ok)throw new Error('non-ok');
+    return r.json();
+  }).then(d=>{
+    if(!d||typeof d!=='object'||!Array.isArray(d.items))throw new Error('invalid shape');
+    const items=d.items.slice(0,20).map(_sgSanitizeItem).filter(Boolean);
+    _sgFetched=items;
+    try{LS&&LS.setItem('cc.suggest.cache',JSON.stringify(items));}catch(_){}
+    try{render(window._list||[]);}catch(_){}
+  }).catch(()=>{
+    console.warn('[suggest] fetch failed — using bundled list');
+  });
+}
+// current suggestion index (per page-load; not persisted — keeps it lightweight)
+let _sgIdx=0;
+function _sgArticleList(){ return (_sgFetched&&_sgFetched.length)?_sgFetched:SUGGESTIONS; }
+function _sgItems(list){
+  // optionally prepend a live tip if any session is in the dumb zone
+  const tip=feat.dumbzone&&window._list&&window._list.some(s=>['drift','danger','auto'].includes(zone(s).key))
+    ? [{kind:'tip', title:'🧠 A session is deep in context', blurb:'Consider /compact for a clean checkpoint.', url:null, tags:[]}]
+    : [];
+  return [...tip, ...list];
+}
+function renderSuggestCard(){
+  const items=_sgItems(_sgArticleList()); if(!items.length)return '';
+  const idx=_sgIdx%items.length; const it=items[idx];
+  const tag=it.kind==='tip'
+    ? `<span class="sg-tag">💡 tip</span>`
+    : `<span class="sg-tag">📖 From the blog</span>`;
+  const readLink=it.url
+    ? `<a class="sg-read" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">Read →</a>`
+    : '';
+  const dots=items.map((_,i)=>`<span class="sg-dot${i===idx?' on':''}"></span>`).join('');
+  const checked=prefGet('suggest.fetch',false)?'checked':'';
+  return `<div class="suggest">
+    <div class="sg-hd"><h3>Suggestions &amp; Reading</h3>${tag}</div>
+    <div class="sg-title">${esc(it.title)}</div>
+    <p class="sg-blurb">${esc(it.blurb)}</p>
+    <div class="sg-footer">
+      <div class="sg-nav">
+        <button class="sg-navbtn" data-sg-prev>‹</button>
+        <div class="sg-dots">${dots}</div>
+        <button class="sg-navbtn" data-sg-next>›</button>
+      </div>
+      ${readLink}
+    </div>
+    <div class="sg-opt" style="margin-top:8px;border-top:1px solid var(--line);padding-top:7px">
+      <input type="checkbox" id="sg-fetch-chk" ${checked}>
+      <label for="sg-fetch-chk">Get the latest suggestions and articles from TheDeLay.com</label>
+    </div>
+  </div>`;
+}
+// on page load: if already opted-in, kick off a background refresh
+if(prefGet('suggest.fetch',false)){ try{_sgFetch();}catch(_){} }
+// wire up suggest card navigation + opt-in checkbox (called after each render)
+function _wireSuggest(){
+  const prev=document.querySelector('[data-sg-prev]'), nxt=document.querySelector('[data-sg-next]');
+  if(prev)prev.onclick=()=>{ const n=_sgItems(_sgArticleList()).length; _sgIdx=(_sgIdx-1+n)%n; try{render(window._list||[]);}catch(_){} };
+  if(nxt)nxt.onclick=()=>{ const n=_sgItems(_sgArticleList()).length; _sgIdx=(_sgIdx+1)%n; try{render(window._list||[]);}catch(_){} };
+  const chk=document.getElementById('sg-fetch-chk');
+  if(chk)chk.onchange=e=>{
+    prefSet('suggest.fetch',e.target.checked);
+    if(e.target.checked){
+      _sgFetch(); // user just opted in — fetch immediately
+    } else {
+      _sgFetched=null; // opted out — drop fetched cache
+      try{LS&&LS.removeItem('cc.suggest.cache');}catch(_){}
+    }
+  };
+}
+// Terms & License modal content (verbatim from TERMS_DRAFT.md + repo LICENSE)
+function _termsBody(){
+  const terms=`cc-observability — Terms of Use (DRAFT)
+
+Effective date: [DATE]  ·  Software: cc-observability ("the Software")  ·  Author: John DeLay ("the Author")
+
+1. Acceptance
+By installing, running, or using the Software, you agree to these Terms of Use and to the MIT License that accompanies the Software. If you do not agree, do not install or use the Software.
+
+2. What the Software is
+The Software is a self-hosted, local-first dashboard that reads your own Claude Code / AI-assistant usage data from your own machine and presents metrics, estimates, and suggestions. It is provided free of charge as open-source software.
+
+3. No warranty — provided "AS IS"
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, AND NON-INFRINGEMENT. The Author does not warrant that the Software will be error-free, uninterrupted, secure, or that any metric, estimate, or suggestion it produces is accurate or complete.
+
+4. Estimates are not billing or financial truth
+All cost, token, spend, savings, rate-limit, and "time-to-compact" figures shown by the Software are ESTIMATES derived from local data and published rates, and may be wrong. They are not an authoritative statement of what you have been or will be billed. Always reconcile against your AI vendor's official billing and account dashboards. Do not rely on the Software's figures for financial, tax, accounting, or business decisions.
+
+5. Not professional advice
+Any coaching, efficiency, "craft," "dumb-zone," award, or suggestion output is informational only and is not professional, financial, legal, or technical advice. You are solely responsible for any action you take based on it.
+
+6. Your responsibilities
+You are solely responsible for: your own AI-vendor account(s), API keys, subscriptions, and all costs you incur using those services; complying with the terms of service of every third-party service the Software touches or reads data from (including but not limited to Anthropic / Claude, and any other AI vendor), and confirming you are authorized to access the data the Software reads; the security of your deployment — including not exposing the Software, its endpoints, or any content index to untrusted networks or the public internet. The Software offers optional access controls (e.g. a PIN); configuring and securing your environment is your responsibility; your own data — its backup, retention, encryption-at-rest, and any consequences of indexing or exporting it; and any data you choose to transmit by enabling an opt-in feature (see §8).
+
+7. No affiliation with third parties
+The Software is an independent project. It is not affiliated with, endorsed by, or sponsored by Anthropic, Google, or any other AI vendor whose products it integrates with or reads data from. All third-party product names and trademarks (including "Claude," "Anthropic," and others) belong to their respective owners and are used only for identification. You must comply with each vendor's own terms.
+
+8. Privacy, data, and opt-in network features
+By default, the Software egresses nothing. It runs entirely on your machine and transmits no usage data to the Author or any third party. The Software contains no background telemetry. The Author does not collect usage statistics from your instance. (Aggregate adoption is inferred only from public code-host statistics such as clone and release-download counts, which contain no data from your instance.) The Software includes one opt-in network feature: a "latest suggestions" option you may enable, which fetches a public list of suggestions and article links. Enabling it sends no usage data, no identifiers, and no personal information — it only retrieves a public file. It is off by default. Following any link the Software displays opens that destination in your own browser, which is ordinary web browsing governed by that destination's own terms and privacy practices — not by the Software.
+
+9. Limitation of liability
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT WILL THE AUTHOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, DATA, OR GOODWILL, OR FOR ANY AI-VENDOR CHARGES OR OVERAGES YOU INCUR, ARISING OUT OF OR RELATED TO YOUR USE OF (OR INABILITY TO USE) THE SOFTWARE, WHETHER IN CONTRACT, TORT, OR OTHERWISE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. THE AUTHOR'S TOTAL AGGREGATE LIABILITY FOR ALL CLAIMS RELATING TO THE SOFTWARE WILL NOT EXCEED US $0, REFLECTING THAT THE SOFTWARE IS PROVIDED FREE OF CHARGE. Some jurisdictions do not allow certain limitations, so parts of this section may not apply to you.
+
+10. Indemnification
+You agree to indemnify and hold harmless the Author from any claim, loss, liability, or expense (including reasonable legal fees) arising from your use of the Software, your data, your deployment, or your violation of these Terms or of any third-party vendor's terms.
+
+11. Changes to these Terms
+The Author may update these Terms in connection with new releases. Material changes will accompany a release. Your continued use of a version after its Terms take effect constitutes acceptance of those Terms.
+
+12. Governing law
+These Terms are governed by the laws of the State of Illinois, United States, without regard to its conflict-of-laws rules.
+
+13. Severability & entire agreement
+If any provision is held unenforceable, the remaining provisions stay in effect. These Terms, together with the MIT License, are the entire agreement between you and the Author regarding the Software.
+
+14. Contact
+Questions about these Terms or the Software: privacy@thedelay.com`;
+
+  const mit=`MIT License
+
+Copyright (c) 2026 John DeLay
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.`;
+
+  return `<div style="padding:10px 4px">
+    <h4 style="margin:0 0 8px;font-size:13px;color:var(--accent);font-weight:800">Terms of Use</h4>
+    <p class="foot" style="text-align:left;white-space:pre-wrap;font-size:12px;line-height:1.6;color:var(--muted)">${esc(terms)}</p>
+    <h4 style="margin:16px 0 8px;font-size:13px;color:var(--accent);font-weight:800">MIT License</h4>
+    <p class="foot" style="text-align:left;white-space:pre-wrap;font-size:12px;line-height:1.6;color:var(--muted)">${esc(mit)}</p>
+  </div>`;
+}
+function openTermsModal(){ const b=document.getElementById('termsbody'); if(b)b.innerHTML=_termsBody(); const m=document.getElementById('termsmodal'); if(m)m.hidden=false; }
+function closeTermsModal(){ const m=document.getElementById('termsmodal'); if(m)m.hidden=true; }
+
+function render(list){
+  window._cards={}; window._list=list; list.forEach(s=>window._cards[s.session_id]=s);
+  renderAccounts(); renderArchive();
+  if(accountFilter) list=list.filter(s=>s.account===accountFilter);   // top-bar account filter
+  list=list.filter(s=>!s.hidden);                                     // archived sessions live in the Archive scene
+  if(!list.length){app.innerHTML=accountFilter?'<div class="empty">No sessions for this account.<br>Tap “All” at the top to clear the filter.</div>':'<div class="empty">No active sessions.</div>';return;}
+  const needs=list.filter(s=>s.needs_me);
+  const others=list.filter(s=>!s.needs_me);
+
+  // alert on NEW waiting session (not on first paint)
+  const nowSet=new Set(needs.map(s=>s.session_id));
+  if(!first){for(const id of nowSet){if(!prevNeeds.has(id)){if(feat.flash)flash();if(!muted)beep();break;}}}
+  prevNeeds=nowSet; first=false;
+
+  const working=others.filter(s=>s.eff_state==='working').length;
+  const idle=others.filter(s=>s.eff_state!=='working').length;
+  const fullest=list.reduce((a,s)=>Math.max(a,s.pct),0);
+  const multiAcct=new Set(list.map(s=>s.account).filter(Boolean)).size>1;  // tag cards only when fleet spans >1 account
+
+  // NEEDS YOU hero
+  let html='';
+  if(needs.length){
+    html+=`<section class="needs hot"><div class="h">⏳ Needs you<span class="n">${needs.length}</span></div>`;
+    for(const s of needs){
+      const perm=(s.state==='waiting'&&s.awaiting_input_since)?'':'';
+      const ask=s.last_msg?`<div class="ask">${s.last_msg.kind==='ask'?'❓ ':'💬 '}${esc(s.last_msg.text)}</div>`:'';
+      html+=`<div class="witem" data-sid="${s.session_id}">
+        <div class="who">${badge(s)}</div>
+        <div class="wait">${waited(s)}<small>waiting</small></div>
+        <div class="sub">${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}${multiAcct&&s.account?' · '+apx(s.account_approx)+esc(acctDisplay(s.account)):''} · ${Math.round(s.pct)}%${s.eta_secs?' · ⏱'+dur(s.eta_secs):''}${s.subagent_running>0?' · ▸'+s.subagent_running:''}</div>
+        ${ask}
+      </div>`;
+    }
+    html+='</section>';
+  } else {
+    html+=`<section class="needs clear"><div class="h">✓ All clear</div><div class="clearmsg">Nothing is waiting on you right now.</div></section>`;
+  }
+
+  // suggestions / reading card (always shown; screenshot-safe: public blog titles + content-free tips only)
+  html+=renderSuggestCard();
+
+  // summary
+  const fc=fullest>=85?'crit':fullest>=60?'warn':'';
+  const cd=window._cost, burn=cd&&cd.burn, today=cd&&cd.daily&&cd.daily[0];
+  const dzCount=feat.dumbzone?list.filter(s=>['drift','danger','auto'].includes(zone(s).key)).length:0;
+  html+=`<div class="summary">
+    <div class="chip" title="Sessions Claude is actively running right now"><b>${working}</b><span>working</span></div>
+    <div class="chip" title="Sessions that are quiet — nothing pending"><b>${idle}</b><span>idle</span></div>
+    <div class="chip ${fc}" title="Highest context-window fill across sessions — higher means closer to auto-compaction"><b>${Math.round(fullest)}%</b><span>fullest ctx</span></div>
+    ${dzCount>0?`<div class="chip warn" title="Sessions drifting into the &quot;dumb zone&quot; — context big enough that quality may degrade; consider /compact"><b>${dzCount}</b><span>🧠 dumb zone</span></div>`:''}
+    ${burn?`<div class="chip" title="Recent spend rate across active sessions, dollars per hour"><b>${usd(burn.cost_per_hour)}/h</b><span>burn</span></div>`:''}
+    ${today?(()=>{const pr=(cd&&cd.daily||[]).slice(1,8).map(d=>d.cost_usd||0);const av=pr.length?pr.reduce((a,b)=>a+b,0)/pr.length:0;
+      return `<div class="chip" title="Spend so far today vs your ${pr.length||0}-day average (${usd(av)})"><b>${usd(today.cost_usd)} ${trend(today.cost_usd,av).html}</b><span>today</span></div>`;})():''}
+  </div>`;
+  // (per-account spend + plan rate-limits moved to the Cost & Accounts scene — see renderCost())
+
+  // other sessions
+  const shown = feat.showIdle ? others : others.filter(s=>s.eff_state==='working');
+  if(shown.length){
+    const hidden=others.length-shown.length;
+    html+='<div class="sect">Sessions'+(hidden>0?` <span class="muted" style="font-weight:400">· ${hidden} idle hidden</span>`:'')+'</div>';
+    for(const s of sortSessions(shown)){
+      const dz=feat.dumbzone, c=color(s.pct), cl=clarity(s);
+      // compaction (% of window) owns the number+bar + the alarm red; the dumb zone gets its own SOFT
+      // inline 🧠 pip (fill+hue grow with absolute context) so the two can't be confused.
+      const pip = dz && s.context_tokens!=null
+        ? `<span class="dz-pip" title="🧠 Dumb-zone risk · ~${fmtTok(cl.ctx)} accumulated context. Tracks Context Rot (how much you're carrying), NOT how full the window is — a soft heuristic (your measured tool-errors show no hard knee). Fuller = consider /clear or /compact for a clean checkpoint.">🧠<i class="dot" style="--f:${cl.fill.toFixed(3)};--c:${cl.col}"></i></span>`
+        : '';
+      html+=`<div class="row ${s.stale?'stale':''}" data-sid="${s.session_id}">
+        <div class="who">${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span>${pip}</div>
+        <div class="pct" style="color:${c}" title="Context window ${Math.round(s.pct)}% full — higher means closer to auto-compaction">${Math.round(s.pct)}%</div>
+        <div class="mini"><i style="width:${Math.min(100,s.pct)}%;background:${c}"></i></div>
+        <div class="sub">
+          <span>${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}${multiAcct&&s.account?' · '+apx(s.account_approx)+esc(acctDisplay(s.account)):''}${s.authoritative?'<span class="tag">'+(s.window>=1000000?'1M':'200k')+'</span>':''}${s.subagent_running>0?' <span class="run">▸'+s.subagent_running+'</span>':''}</span>
+          <span>${s.cost_usd!=null?(s.cost_est?'~':'')+usd(s.cost_usd)+' · ':''}${s.eta_secs?'⏱'+dur(s.eta_secs)+' · ':''}~${fmt(s.tokens_until_compact)} left · ${rel(s.age_secs)}</span>
+        </div>
+      </div>`;
+    }
+  }
+  app.innerHTML=html;
+  _wireSuggest();                       // attach suggest card nav + checkbox handlers after each render
+  renderCost(list); renderHistory();   // keep the Cost & History scenes in sync on every data tick
+}
+
+// ---- Cost & Accounts scene: per-account spend + plan rate-limits + Extra-Usage, with a fleet rollup ----
+// Same per-account logic that used to live in the Triage view, now its own self-contained scene.
+function renderCost(list){
+  const sc=document.getElementById('scene-cost'); if(!sc)return;
+  list=list||window._list||[];
+  const cost=window._cost||{}, burn=cost.burn, today=cost.daily&&cost.daily[0];
+  let pa=perAccount(list, window._cost);
+  if(accountFilter) pa=pa.filter(a=>a.account===accountFilter);   // honor the top-bar account filter
+  const totalToday=pa.reduce((a,x)=>a+(x.today||0),0) || (today?today.cost_usd:0);
+  let h='<h2>Cost &amp; Accounts</h2>';
+  h+='<div class="summary">'
+    +`<div class="chip"><b>${totalToday?usd(totalToday):'$0'}</b><span>today · fleet</span></div>`
+    +(burn?`<div class="chip"><b>${usd(burn.cost_per_hour)}/h</b><span>burn</span></div>`:'')
+    +`<div class="chip"><b>${pa.length}</b><span>account${pa.length===1?'':'s'}</span></div>`
+    +'</div>';
+  if(!pa.length){ sc.innerHTML=h+'<div class="empty">No cost or account data yet.</div>'; return; }
+  h+='<div class="ratelimits">'+pa.map(a=>{
+      const lbl=acctLabel(a.account), approx=a.approx&&lbl!=='plan limits';
+      const eu=extraUsage(a);
+      let euChip='';
+      if(eu){
+        const reta=(window._cost&&window._cost.rate_eta&&window._cost.rate_eta[a.account])||{};
+        const e=reta[eu.binds==='5h'?'five_hour':'seven_day'];   // ETA for the BINDING window
+        const etaTxt=(e&&e.eta_secs)?' · ⏱'+dur(e.eta_secs):'';
+        const etaTitle=(e&&e.eta_secs)?` · ~${dur(e.eta_secs)} to 100% at ${e.slope_pct_per_hr}%/h`:'';
+        euChip=`<div class="chip ${eu.cls}" title="closest window: ${eu.binds} at ${eu.pct}%${eu.eu===true?' · Extra Usage ON → overage billing past 100%':eu.eu===false?' · Extra Usage OFF → throttles at 100%':''}${etaTitle}"><b>${eu.pct}%</b><span>${eu.label}${etaTxt}</span></div>`;
+      }
+      const ov=(window._cost&&window._cost.overage&&window._cost.overage[a.account])||0;
+      const ovChip=ov>0?`<div class="chip crit" title="approx — cost accrued while at/over the plan cap (Extra Usage)"><b>${usd(ov)}</b><span>⚡ overage today</span></div>`:'';
+      return `
+      <div class="rlgroup">
+        <span class="rlacct" title="${esc(revealNames?a.account:lbl)}${approx?' (approximate — host login, not a per-session capture)':''}">${apx(approx)}${esc(lbl)}</span>
+        ${euChip}${ovChip}
+        ${a.today!=null?`<div class="chip"><b>${usd(a.today)}</b><span>today</span></div>`:''}
+        ${ratechip(a.five_hour,'5h')}${ratechip(a.seven_day,'7d')}
+      </div>`;}).join('')+'</div>';
+  sc.innerHTML=h;
+}
+
+// ---- History / Trophy Room scene: all-time totals + 14-day spend bars + top projects (from /cost) ----
+// Tiny hand-rolled inline SVG (no CDN — honors no-egress/offline). Identifiers masked (screenshot-safe).
+function svgBars(data,opts){
+  opts=opts||{}; const h=opts.h||80, w=opts.w||320, gap=2, n=Math.max(1,data.length);
+  const max=Math.max(1,...data.map(d=>d.value||0)), bw=(w-(n-1)*gap)/n;
+  const bars=data.map((d,i)=>{ const bh=Math.max(1,((d.value||0)/max)*(h-2)), x=i*(bw+gap), y=h-bh;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="1.5" fill="${d.hi?'var(--primary)':'var(--accent)'}"><title>${esc(d.label)}: ${esc(d.tip||'')}</title></rect>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="display:block;margin-top:4px">${bars}</svg>`;
+}
+// context-trajectory sparkline (drill-in): context_tokens over time, drawn over translucent dumb-zone bands
+// (green ≤120k · amber 120–200k · red >200k) so you watch a session climb through the zones. From /history.
+function svgSpark(pts,opts){
+  opts=opts||{}; const w=opts.w||320, h=opts.h||56;
+  if(!pts||pts.length<2) return '';
+  const xs=pts.map(p=>p.ts), ys=pts.map(p=>p.ctx||0);
+  const minx=Math.min(...xs), maxx=Math.max(...xs), maxy=Math.max(ZONE_TOK.good, ...ys);
+  const X=t=>maxx>minx?((t-minx)/(maxx-minx))*w:0, Y=v=>h-(Math.min(v,maxy)/maxy)*(h-2)-1;
+  const band=(lo,hi,col)=>{const y1=Y(hi),y2=Y(lo); return y2>y1?`<rect x="0" y="${y1.toFixed(1)}" width="${w}" height="${(y2-y1).toFixed(1)}" fill="${col}" opacity="0.12"/>`:'';};
+  const bands=band(0,ZONE_TOK.drift,'var(--green)')+band(ZONE_TOK.drift,ZONE_TOK.danger,'var(--amber)')+band(ZONE_TOK.danger,maxy,'var(--red)');
+  const d=pts.map((p,i)=>(i?'L':'M')+X(p.ts).toFixed(1)+' '+Y(p.ctx||0).toFixed(1)).join(' ');
+  const last=pts[pts.length-1], lz=zone({context_tokens:last.ctx});
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="display:block">${bands}`
+    +`<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`
+    +`<circle cx="${X(last.ts).toFixed(1)}" cy="${Y(last.ctx).toFixed(1)}" r="2.5" fill="${lz.color}"/></svg>`;
+}
+// generic heatmap grid (GitHub-calendar Slice 2 + the Slice-4 time-of-day grid): cells=[{x,y,value,tip}],
+// laid out on a cols×rows grid, colored by value in 5 intensity buckets. No CDN — hand-rolled <rect>s.
+const HEAT=['var(--card2)','rgba(0,217,255,.22)','rgba(0,217,255,.45)','rgba(0,217,255,.72)','var(--accent)'];
+const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function svgHeatmap(cells,opts){
+  opts=opts||{}; const cs=opts.cell||11, gap=opts.gap||2, cols=opts.cols||1, rows=opts.rows||1;
+  const max=opts.max||Math.max(1,...cells.map(c=>c.value||0));
+  const lvl=v=>!v?0:(v/max>0.75?4:v/max>0.5?3:v/max>0.25?2:1);
+  const w=cols*(cs+gap), h=rows*(cs+gap);
+  const rects=cells.map(c=>`<rect x="${(c.x*(cs+gap)).toFixed(1)}" y="${(c.y*(cs+gap)).toFixed(1)}" width="${cs}" height="${cs}" rx="2" fill="${HEAT[lvl(c.value||0)]}"><title>${esc(c.tip||'')}</title></rect>`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="xMinYMin meet" style="display:block;margin-top:6px;max-width:100%;height:auto">${rects}</svg>`;
+}
+// build a GitHub-style year calendar from daily rows → {cells, cols}. Days are LOCAL (match the store's
+// date(...,'localtime')); columns = weeks (start aligned to Sunday), rows = day-of-week (0=Sun..6=Sat).
+function calendarCells(daily,metric){
+  const val=d=>metric==='messages'?(d.messages||0):metric==='tokens'?(d.tokens||0):(d.cost_usd||0);
+  const byDay={}; (daily||[]).forEach(d=>{ byDay[d.day]=d; });
+  const pad=n=>String(n).padStart(2,'0'), fmtDay=dt=>dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());
+  const today=new Date(); today.setHours(0,0,0,0);
+  const start=new Date(today); start.setDate(start.getDate()-364); start.setDate(start.getDate()-start.getDay());
+  const cells=[]; let i=0;
+  for(let dt=new Date(start); dt<=today; dt.setDate(dt.getDate()+1), i++){
+    const iso=fmtDay(dt), d=byDay[iso], v=d?val(d):0;
+    const lbl=metric==='messages'?(v+' msgs'):metric==='tokens'?(fmtTok(v)+' tokens'):usd(v);
+    cells.push({x:Math.floor(i/7), y:dt.getDay(), value:v, tip:iso+': '+(v?lbl:'no activity')});
+  }
+  return {cells, cols:Math.floor((i-1)/7)+1};
+}
+// stacked-bar chart normalized to 100% per column (Slice 3 model-mix). rows=[{day,<key>:count,...}],
+// opts={keys:[...], colors:{key:css}}. Each bar = one day; segment height = that key's share of the day.
+function svgStacked(rows,opts){
+  opts=opts||{}; const keys=opts.keys||[], colors=opts.colors||{};
+  const h=opts.h||80, w=opts.w||320, gap=2, n=Math.max(1,rows.length), bw=(w-(n-1)*gap)/n;
+  const bars=rows.map((r,i)=>{
+    const tot=keys.reduce((a,k)=>a+(r[k]||0),0)||1; let y=h; const x=i*(bw+gap);
+    return keys.map(k=>{ const v=r[k]||0; if(!v)return ''; const sh=(v/tot)*h; y-=sh;
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${sh.toFixed(1)}" fill="${colors[k]||'var(--muted)'}"><title>${esc(r.day)} · ${k}: ${Math.round(v/tot*100)}% (${v})</title></rect>`;
+    }).join('');
+  }).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="display:block;margin-top:4px">${bars}</svg>`;
+}
+// trend vs a baseline → arrow + % delta. For spend, up=amber (more), down=green (less), flat=muted.
+function trend(cur,base){
+  if(!base) return {dir:'flat', html:'<span class="tr flat">▬</span>'};
+  const d=(cur-base)/base*100, cls=d>=5?'up':d<=-5?'down':'flat', arrow=d>=5?'▲':d<=-5?'▼':'▬';
+  return {dir:cls, html:`<span class="tr ${cls}">${arrow} ${Math.abs(Math.round(d))}%</span>`};
+}
+function renderHistory(){
+  const sc=document.getElementById('scene-history'); if(!sc)return;
+  const cost=window._cost||{}, daily=(cost.daily||[]), projects=(cost.projects||[]);
+  const allMsgs=projects.reduce((a,p)=>a+(p.messages||0),0);
+  let h='<h2>History</h2>';
+  h+='<div class="summary">'
+    +`<div class="chip" title="All-time estimated spend captured by the collector"><b>${cost.total_usd!=null?usd(cost.total_usd):'—'}</b><span>all-time spend</span></div>`
+    +`<div class="chip"><b>${allMsgs?fmt(allMsgs):'—'}</b><span>all-time messages</span></div>`
+    +(cost.burn?`<div class="chip"><b>${usd(cost.burn.cost_per_hour)}/h</b><span>burn now</span></div>`:'')
+    +'</div>';
+  if(!daily.length&&!projects.length){ sc.innerHTML=h+'<div class="empty">No history yet — it accrues as the collector runs.</div>'; return; }
+  if(daily.length){
+    const today=(daily[0]&&daily[0].cost_usd)||0, prior=daily.slice(1,8).map(d=>d.cost_usd||0);
+    const avg=prior.length?prior.reduce((a,b)=>a+b,0)/prior.length:0, t=trend(today,avg);
+    const bars=daily.slice().reverse().map((d,i,arr)=>({label:d.day,value:d.cost_usd||0,tip:usd(d.cost_usd),hi:i===arr.length-1}));
+    h+=`<div class="lcard"><h3>Daily spend · last ${daily.length}d</h3>
+      <div class="trend">Today <b>${usd(today)}</b> ${t.html} <span class="muted">vs your ${prior.length||0}-day avg ${usd(avg)}</span></div>
+      ${svgBars(bars)}</div>`;
+  }
+  if(projects.length){
+    const top=projects.slice(0,8), max=Math.max(1,...top.map(p=>p.cost_usd||0));
+    h+='<div class="lcard"><h3>Top projects · all-time</h3>'+top.map(p=>{
+      const pct=Math.round(((p.cost_usd||0)/max)*100);
+      return `<div class="hbar"><span class="hl">${esc(projDisplay(p.project))}</span><span class="ht"><i style="width:${pct}%"></i></span><span class="hv">${usd(p.cost_usd)}</span></div>`;
+    }).join('')+'</div>';
+  }
+  // Craft signals (Phase 6b): the "be-better" rollup — compaction discipline is the headline responsible-use metric.
+  const ev=cost.events||{};
+  if(Object.keys(ev).length){
+    const m=ev.compaction_manual||0, a=ev.compaction_auto||0, tot=m+a;
+    const disc=tot?Math.round(m/tot*100):null, dcol=disc>=80?'var(--green)':disc>=50?'var(--amber)':'var(--red)';
+    h+='<div class="lcard"><h3>🧠 Craft signals · all-time</h3><dl class="lterm">';
+    if(tot)h+=`<dt>Compaction discipline</dt><dd><b style="color:${dcol}">${disc}% manual</b> <span class="muted">(${m} manual · ${a} auto)</span> — compacting before the wall is the win; auto-compact counts against you.</dd>`;
+    if(ev.skill_use)h+=`<dt>Skills used</dt><dd><b>${fmt(ev.skill_use)}</b></dd>`;
+    if(ev.subagent_spawn)h+=`<dt>Subagents spawned</dt><dd><b>${fmt(ev.subagent_spawn)}</b></dd>`;
+    if(ev.tool_error)h+=`<dt>Tool errors</dt><dd><b>${fmt(ev.tool_error)}</b></dd>`;
+    h+='</dl><p class="foot" style="text-align:left;padding-top:6px">These feed the upcoming Craft Score — rewarding skilled, responsible use, not raw spend.</p></div>';
+  }
+  sc.innerHTML=h;
+}
+
+// ---- Trophy Room scene (V10 Slice 1): all-time vanity totals + active-day streaks + cache savings ----
+// Data from /report (window._report), polled ~60s off the live path. The private museum — gloat freely;
+// computed locally, never shared. Identifiers masked (screenshot-safe). Costs are estimates.
+let trophyMetric=prefGet('trophy.metric','cost');   // calendar-heatmap metric: cost | messages | tokens
+function renderTrophy(){
+  const sc=document.getElementById('scene-trophy'); if(!sc)return;
+  const r=window._report;
+  let h='<h2>🏆 Trophy Room</h2><p class="intro">Your <b>all-time</b> Claude Code museum — gloat freely. '
+    +'Computed on this box from retained usage, <b>never shared</b>. Costs are estimates.</p>';
+  if(!r||r.enabled===false){ sc.innerHTML=h+'<div class="empty">No history yet — it accrues as the collector runs.</div>'; return; }
+  if(r.error){ sc.innerHTML=h+'<div class="empty">Couldn’t build the trophy room right now.</div>'; return; }
+  const at=r.all_time||{}, st=r.streak||{};
+  h+='<div class="summary">'
+    +`<div class="chip" title="All-time estimated spend captured by the collector"><b>${at.cost_usd!=null?usd(at.cost_usd):'—'}</b><span>all-time spend</span></div>`
+    +`<div class="chip"><b>${fmt(at.messages)}</b><span>messages</span></div>`
+    +`<div class="chip"><b>${fmt(at.sessions)}</b><span>sessions</span></div>`
+    +`<div class="chip" title="input + output + cache tokens that flowed"><b>${fmtTok(at.tokens)}</b><span>tokens</span></div>`
+    +'</div>';
+  h+=`<div class="lcard"><h3>🔥 Streak</h3>
+      <div class="trend">Current <b>${st.current||0} day${(st.current||0)===1?'':'s'}</b>
+        <span class="muted">· longest ${st.longest||0} · ${st.active_days||0} active days total</span></div></div>`;
+  // calendar heatmap (Slice 2): one square per day, last 365 days, with a cost/messages/tokens toggle
+  const daily=r.daily||[];
+  if(daily.length){
+    const {cells,cols}=calendarCells(daily,trophyMetric);
+    const mlabel={cost:'$ cost',messages:'messages',tokens:'tokens'};
+    const btns=['cost','messages','tokens'].map(m=>`<button class="hmbtn${m===trophyMetric?' on':''}" data-metric="${m}">${mlabel[m]}</button>`).join('');
+    h+=`<div class="lcard"><h3>Activity · last year<span class="hmtoggle">${btns}</span></h3>
+      ${svgHeatmap(cells,{cols,rows:7,cell:11,gap:2})}
+      <p class="foot" style="text-align:left;padding-top:6px">One square per day — darker = more ${mlabel[trophyMetric]}. Hover a square for the date.</p></div>`;
+  }
+  // time-of-day / day-of-week rhythm grid (Slice 4): full 24×7 matrix of message activity, reuses svgHeatmap
+  const hourly=r.hourly||[];
+  if(hourly.length){
+    const byKey={}; hourly.forEach(c=>{ byKey[c.dow+'-'+c.hour]=c; });
+    const cells=[];
+    for(let d=0;d<7;d++)for(let hr=0;hr<24;hr++){
+      const c=byKey[d+'-'+hr], v=c?(c.messages||0):0;
+      cells.push({x:hr,y:d,value:v,tip:DOW[d]+' '+(hr<10?'0':'')+hr+':00 — '+v+' msgs'});
+    }
+    h+=`<div class="lcard"><h3>When you code · last 30d</h3>
+      ${svgHeatmap(cells,{cols:24,rows:7,cell:11,gap:2})}
+      <p class="foot" style="text-align:left;padding-top:6px">Day-of-week (rows: Sun→Sat) × hour 0–23 (local). Darker = more messages.</p></div>`;
+  }
+  // dumb-zone-time trend (Slice 5): healthy-zone % per day — the "am I keeping context cleaner over time?" hook
+  const zt=r.zone_trend||[];
+  if(zt.length){
+    const bars=zt.map((p,i,a)=>({label:p.day,value:p.healthy_pct,tip:p.healthy_pct+'% healthy',hi:i===a.length-1}));
+    const latest=zt[zt.length-1].healthy_pct, prior=zt.slice(0,-1).map(p=>p.healthy_pct);
+    const avg=prior.length?prior.reduce((a,b)=>a+b,0)/prior.length:0, dlt=Math.round(latest-avg);
+    // higher healthy% = better, so improvement is green (NOT spend-style where up=bad) — color by goodness
+    const col=dlt>=2?'var(--green)':dlt<=-2?'var(--amber)':'var(--muted)', arr=dlt>=2?'▲':dlt<=-2?'▼':'▬';
+    h+=`<div class="lcard"><h3>🧠 Context hygiene · healthy-zone %</h3>
+      <div class="trend">Latest <b>${latest}%</b> <span style="color:${col};font-weight:700">${arr} ${Math.abs(dlt)}pt</span>
+        <span class="muted">vs your ${prior.length||0}-day avg ${Math.round(avg)}%</span></div>
+      ${svgBars(bars,{h:70})}
+      <p class="foot" style="text-align:left;padding-top:6px">Share of each day's messages in the 🟢 Sharp / 🟡 Good context zones — higher = cleaner context, less drift. Days under 50 messages omitted.</p></div>`;
+  }
+  // model-mix over time (Slice 3): % of daily messages by model family — the efficiency chart
+  const mmd=r.model_mix_daily||[];
+  if(mmd.length){
+    const keys=['opus','sonnet','haiku','other'], colors={opus:'var(--primary)',sonnet:'var(--accent)',haiku:'var(--green)',other:'var(--muted)'};
+    const legend=keys.filter(k=>mmd.some(d=>d[k])).map(k=>`<span class="mxk"><i style="background:${colors[k]}"></i>${k}</span>`).join('');
+    h+=`<div class="lcard"><h3>Model mix · last 30d<span class="mxleg">${legend}</span></h3>
+      ${svgStacked(mmd,{keys,colors})}
+      <p class="foot" style="text-align:left;padding-top:6px">Share of each day's messages by model family — the efficiency chart (mixing in Sonnet/Haiku for simpler turns costs less). Descriptive, not a judgment.</p></div>`;
+  }
+  if(r.cache_savings_usd!=null){
+    h+=`<div class="lcard" style="text-align:center">
+      <div style="font-size:32px;font-weight:800;color:var(--green);text-shadow:0 0 14px var(--green)">🧊 ${usd(r.cache_savings_usd)}</div>
+      <div class="foot">estimated saved by prompt caching — what those cache reads would've cost at the full input rate</div></div>`;
+  }
+  const bd=r.breakdown||{}, order=[['input','Input'],['output','Output'],['cache_read','Cache read'],['cache_creation','Cache write']];
+  if(order.some(([k])=>bd[k])){
+    const max=Math.max(1,...order.map(([k])=>(bd[k]&&bd[k].cost_usd)||0));
+    h+='<div class="lcard"><h3>Where the spend goes · all-time</h3>'+order.map(([k,lbl])=>{
+      const b=bd[k]||{}, c=b.cost_usd||0, pct=Math.round((c/max)*100);
+      return `<div class="hbar"><span class="hl">${lbl}</span><span class="ht"><i style="width:${pct}%"></i></span><span class="hv">${usd(c)} · ${fmtTok(b.tokens)}t</span></div>`;
+    }).join('')+'<p class="foot" style="text-align:left;padding-top:6px">Estimated split from per-model rates; the all-time spend chip stays the authoritative total.</p></div>';
+  }
+  sc.innerHTML=h;
+}
+async function pollTrophy(){try{const r=await fetch('/report');if(r.ok){window._report=await r.json();renderTrophy();}}catch(_){}}
+
+// ---- Craft Score scene (Phase 7): a rate-normalized, honor-system score for skilled+responsible use ----
+// Data from /craft (window._craft). Honest by construction: every dim is a heuristic over observable proxies,
+// rate-normalized (ratios not volume) so light & heavy users compare fairly. Local-only, never shared.
+function scoreCol(s){ return s==null?'var(--muted)':s>=80?'var(--green)':s>=60?'var(--amber)':'var(--red)'; }
+function craftDim(title,d,desc,signals){
+  if(!d)return '';
+  const s=d.score, col=scoreCol(s), w=s==null?0:Math.round(s);
+  const sig=(signals||[]).filter(Boolean).join(' · ');
+  return `<div class="lcard"><h3>${title}<span style="float:right;font-weight:800;color:${col}">${s==null?'—':s}</span></h3>
+    <div class="ht" style="margin:6px 0"><i style="width:${w}%;background:${col}"></i></div>
+    <p class="foot" style="text-align:left;padding-top:2px">${desc}${sig?'<br><span class="muted">'+sig+'</span>':''}</p></div>`;
+}
+function renderCraft(){
+  const sc=document.getElementById('scene-craft'); if(!sc)return;
+  const c=window._craft;
+  let h='<h2>🏅 Craft Score</h2><p class="intro">A rate-normalized score that rewards <b>skilled, responsible</b> '
+    +'use of Claude Code — not raw spend. Honor-system, computed on this box, <b>never shared</b>.</p>';
+  if(!c||c.enabled===false){ sc.innerHTML=h+'<div class="empty">No data yet — the score builds as the collector records usage &amp; events.</div>'; return; }
+  if(c.error){ sc.innerHTML=h+'<div class="empty">Couldn’t compute the score right now.</div>'; return; }
+  if(c.score==null){ sc.innerHTML=h+'<div class="empty">Not enough signal yet to score — keep using Claude Code and check back.</div>'; return; }
+  const col=scoreCol(c.score);
+  h+=`<div class="lcard" style="text-align:center">
+      <div style="font-size:56px;font-weight:800;color:${col};line-height:1;text-shadow:0 0 18px ${col}">${c.score}<span style="font-size:20px;color:var(--muted);text-shadow:none">/100</span></div>
+      <div style="font-size:16px;letter-spacing:3px;color:${col};margin-top:2px">GRADE ${esc(c.grade)}</div></div>`;
+  const D=c.dims||{}, e=D.efficiency, hy=D.hygiene, cr=D.craft;
+  h+=craftDim('⚡ Efficiency', e,
+      'Cache-read ratio — how much input was served from cache. High = good prompt/context structure (hard to fake).',
+      [ e&&e.cache_ratio!=null ? Math.round(e.cache_ratio*100)+'% of input from cache' : null ]);
+  const m=hy?hy.compaction_manual||0:0, a=hy?hy.compaction_auto||0:0, tot=m+a;
+  h+=craftDim('🧠 Hygiene', hy,
+      'Compacting before the wall, time in healthy context zones, and a low tool-error rate.',
+      [ tot? Math.round(m/tot*100)+'% manual compaction ('+m+'·'+a+')' : null,
+        hy&&hy.healthy_pct!=null ? hy.healthy_pct+'% time in 🟢/🟡 zones' : null,
+        hy&&hy.messages ? (hy.tool_errors||0)+' tool errors / '+fmt(hy.messages)+' msgs' : null ]);
+  h+=craftDim('🛠️ Craft', cr,
+      'Use of skills &amp; subagents — leverage beyond plain chat.',
+      [ cr ? (cr.skill_use||0)+' skills · '+(cr.subagent_spawn||0)+' subagents' : null ]);
+  h+='<p class="foot" style="text-align:left;padding-top:6px">These are <b>estimates over observable proxies</b>, '
+    +'not a judgment of your work (quality is unobservable). Rate-normalized so light and heavy users compare fairly.</p>';
+  h+=renderRecentForm(c);
+  h+=renderTrajectory(c);
+  h+=renderMedals(c);
+  sc.innerHTML=h;
+}
+// Track 2b — your Craft Score over time + personal best ("new high score" moment). Each day scored on its own
+// activity; computed on demand from retained data. Sparkline reuses svgBars; the best day is highlighted.
+function renderTrajectory(c){
+  const ser=c&&c.series;
+  if(!ser||ser.length<2) return '';
+  const best=c.best, nh=c.new_high;
+  const bars=ser.map(p=>({label:p.day, value:p.score, tip:String(p.score), hi:best&&p.day===best.day}));
+  let h='<div class="lcard"><h3>📈 Your trajectory <span style="float:right;font-weight:600;color:var(--muted)">last '+ser.length+'d</span></h3>'
+    +'<p class="foot" style="text-align:left;margin:0 0 4px">Daily Craft Score — each day scored on its own activity.</p>'
+    +svgBars(bars);
+  if(best) h+=`<div class="trend" style="margin-top:6px">${nh?'🏆 <b style="color:var(--green)">New high score!</b> ':'Personal best '}<b>${best.score}</b> <span class="muted">on ${esc(best.day)}</span></div>`;
+  return h+'</div>';
+}
+// Track 2 — self-comparison: your last 7 days vs your own 30-day baseline (you-vs-past-you, no leaderboard).
+// Score deltas are in POINTS; up is good (green), down is bad (red) — opposite of spend.
+function scoreDelta(cur,base){
+  if(cur==null||base==null) return '<span class="muted">—</span>';
+  const d=cur-base;
+  if(Math.abs(d)<1) return '<span class="tr flat">▬ even</span>';
+  const up=d>0;
+  return `<span style="color:${up?'var(--green)':'var(--red)'};font-weight:700">${up?'▲':'▼'} ${Math.abs(Math.round(d))}</span>`;
+}
+function renderRecentForm(c){
+  const cmp=c&&c.compare, w7=cmp&&cmp.w7, w30=cmp&&cmp.w30;
+  if(!w7||w7.score==null){ return ''; }                  // not enough recent data → say nothing
+  const dd=(k)=>{ const a=w7.dims&&w7.dims[k], b=w30&&w30.dims&&w30.dims[k];
+    return `<div class="hbar"><span class="hl">${k[0].toUpperCase()+k.slice(1)}</span>`
+      +`<span class="ht"><i style="width:${Math.round(a&&a.score!=null?a.score:0)}%"></i></span>`
+      +`<span class="hv">${a&&a.score!=null?a.score:'—'} ${scoreDelta(a&&a.score, b&&b.score)}</span></div>`; };
+  const col=scoreCol(w7.score);
+  return `<div class="lcard"><h3>📅 Recent form <span style="float:right;font-weight:800;color:${col}">${w7.score}</span></h3>
+    <p class="foot" style="text-align:left;margin:0 0 6px">Your <b>last 7 days</b> vs your <b>30-day</b> baseline (${w30&&w30.score!=null?w30.score:'—'}) — you vs past you, never anyone else.</p>
+    <div class="trend" style="margin-bottom:4px">Overall <b>${w7.score}</b> ${scoreDelta(w7.score, w30&&w30.score)} <span class="muted">vs 30-day avg</span></div>
+    ${dd('efficiency')}${dd('hygiene')}${dd('craft')}</div>`;
+}
+// Trophy case (Phase 8): tiered collection medals from the same aggregates as the score. Honor-system,
+// local-only — earned by REPEATED responsible/skilled use. Locked medals show what's needed to unlock.
+const TIER_COL={Bronze:'#cd7f32',Silver:'#c0c8d4',Gold:'var(--amber)',Platinum:'var(--accent)'};
+function renderMedals(c){
+  const meds=c&&c.medals, lvl=c&&c.level;
+  if(!meds||!meds.length) return '';
+  let h=`<div class="lcard"><h3>🎖️ Trophy case`;
+  if(lvl) h+=`<span style="float:right;font-weight:800;color:var(--primary)">${lvl.points}<span style="color:var(--muted);font-weight:600"> pts · ${lvl.earned}/${lvl.total}</span></span>`;
+  h+='</h3><div class="medals">';
+  for(const m of meds){
+    const col=m.tier?TIER_COL[m.tier]:'var(--muted)';
+    const tierTxt=m.locked?'🔒 locked':m.tier?`${m.tier_icon||''} ${m.tier}`:'—';
+    const valTxt=m.value==null?(m.locked?'needs more data':'—')
+      :(m.kind==='rate'?Math.round(m.value)+'% ':fmt(m.value)+' ')+(m.next_threshold!=null?`→ ${m.kind==='rate'?m.next_threshold+'%':fmt(m.next_threshold)}`:'max');
+    h+=`<div class="medal${m.locked?' locked':''}">
+        <div class="mtop"><span class="mi">${m.icon}</span>${esc(m.name)}<span class="mtier" style="color:${col}">${tierTxt}</span></div>
+        <div class="mt"><i style="width:${Math.round((m.progress||0)*100)}%;${m.tier?('background:'+col):''}"></i></div>
+        <div class="md">${esc(m.desc)}<br><span style="color:var(--txt)">${valTxt}</span></div>
+      </div>`;
+  }
+  h+='</div><p class="foot muted" style="text-align:left;padding-top:6px">Honor-system, computed on this box, never shared. Earned by repeated good habits — not raw volume.</p></div>';
+  return h;
+}
+async function pollCraft(){try{const r=await fetch('/craft');if(r.ok){window._craft=await r.json();renderCraft();}}catch(_){}}
+
+// ---- Efficiency coach scene (V11 Slice 1): aggregate what-if model-downgrade savings from /efficiency ----
+// Honesty discipline: pure repricing of stored tokens → OPPORTUNITIES, never judgments; every number an estimate.
+function renderEfficiency(){
+  const sc=document.getElementById('scene-efficiency'); if(!sc)return;
+  const e=window._eff;
+  let h='<h2>💡 Efficiency</h2><p class="intro">What-if model right-sizing — if some turns had run on a cheaper '
+    +'model, what might you have saved? Pure arithmetic on your stored token counts: <b>opportunities, not judgments</b>, '
+    +'and every figure is an <b>estimate</b> (quality isn’t observable — hard turns genuinely need Opus).</p>';
+  if(!e||e.enabled===false){ sc.innerHTML=h+'<div class="empty">No data yet — it builds as the collector records usage.</div>'; return; }
+  if(e.error){ sc.innerHTML=h+'<div class="empty">Couldn’t compute efficiency right now.</div>'; return; }
+  const sv=e.savings||{}, pol=(sv.policies||[]).filter(p=>p.turns>0);
+  // — what-if downgrade savings —
+  if(pol.length){
+    const top=pol.reduce((a,b)=>b.saved_usd>a.saved_usd?b:a,pol[0]);
+    h+=`<div class="lcard" style="text-align:center">
+        <div style="font-size:34px;font-weight:800;color:var(--green);text-shadow:0 0 14px var(--green)">~${usd(top.saved_usd)}</div>
+        <div class="foot">est. saved if <b>${esc(top.label)}</b> over the last ${sv.days||30} days (${top.turns} turns)</div></div>`;
+    h+='<div class="lcard"><h3>What-if downgrade policies · last '+(sv.days||30)+'d</h3>';
+    const max=Math.max(1,...pol.map(p=>p.saved_usd||0));
+    h+=pol.map(p=>{ const pct=Math.round(((p.saved_usd||0)/max)*100);
+      return `<div class="hbar"><span class="hl">${esc(p.label)}</span><span class="ht"><i style="width:${pct}%"></i></span><span class="hv">~${usd(p.saved_usd)} · ${p.turns}t</span></div>`;
+    }).join('');
+    h+=`<p class="foot" style="text-align:left;padding-top:6px">Estimated from per-model rates on the same tokens (cache included), across ${sv.considered||0} turns. An <b>opportunity</b> estimate — not a claim those turns would’ve been as good on a cheaper model.</p></div>`;
+  } else {
+    h+=`<div class="lcard"><div class="foot" style="text-align:center">No downgrade opportunities in the last ${sv.days||30} days — your model mix already looks right-sized. 👍</div></div>`;
+  }
+  // — subscription ROI (Slice 2): API-equivalent value vs your plan price; set the price per account via /pref —
+  const roi=e.roi||[];
+  if(roi.length){
+    h+='<div class="lcard"><h3>Subscription ROI · last 30d</h3>';
+    h+=roi.map(x=>{
+      const val='~'+usd(x.value_usd)+' API-equiv';
+      if(x.plan_price){
+        const mult=x.multiple!=null?x.multiple+'×':'';
+        return `<div class="roirow"><span class="hl">${esc(acctDisplay(x.account))}</span><span class="rv">${val} vs ${usd(x.plan_price)} plan = <b style="color:var(--green)">${mult}</b></span><button class="hmbtn" data-price="${esc(x.account)}">edit</button></div>`;
+      }
+      return `<div class="roirow"><span class="hl">${esc(acctDisplay(x.account))}</span><span class="rv muted">${val}</span><button class="hmbtn" data-price="${esc(x.account)}">set plan $</button></div>`;
+    }).join('');
+    h+=`<p class="foot" style="text-align:left;padding-top:6px">API-equivalent value = what these turns would cost at API rates (Σ estimated cost). Set your monthly plan price to see the multiple. Stored locally, never shared; an estimate.</p></div>`;
+  }
+  // — cap headroom (Slice 3): how much of each plan cap you used + how often you hit the wall (wired hosts) —
+  const caps=e.caps||[], wl={five_hour:'5h cap',seven_day:'7d cap'};
+  if(caps.length){
+    h+='<div class="lcard"><h3>Cap headroom · last 30d</h3>';
+    caps.forEach(c=>{
+      h+=`<div class="caphdr">${esc(acctDisplay(c.account))}</div>`;
+      ['five_hour','seven_day'].forEach(w=>{ const d=c.windows[w]; if(!d)return;
+        const col=d.peak>=95?'var(--red)':d.peak>=80?'var(--amber)':'var(--green)';
+        h+=`<div class="hbar"><span class="hl">${wl[w]}</span><span class="ht"><i style="width:${Math.min(100,Math.round(d.peak))}%;background:${col}"></i></span><span class="hv">avg ${d.avg}% · peak ${d.peak}% · ${d.cap_hits} hit${d.cap_hits===1?'':'s'}</span></div>`;
+      });
+    });
+    h+=`<p class="foot" style="text-align:left;padding-top:6px">From your plan rate-limit readings — how much of each cap you used and how many windows maxed out. Only accounts on a wired host (statusline reports limits); consumer Pro/Max only.</p></div>`;
+  }
+  // — reducible-spend estimate (Slice 4, speculative): $ spent while context sat in the 🔴 Danger zone —
+  const rd=e.reducible;
+  if(rd && rd.total_usd>0){
+    h+='<div class="lcard"><h3>Spend that may be reducible · last '+(rd.days||30)+'d</h3>';
+    h+=`<div style="text-align:center"><div style="font-size:30px;font-weight:800;color:var(--amber);text-shadow:0 0 12px var(--amber)">~${usd(rd.at_risk_usd)}</div>`
+      +`<div class="foot">${rd.at_risk_pct||0}% of spend ran while context was in the 🔴 Danger zone (&gt;200k tokens)</div></div>`;
+    const bb=rd.by_band||{}, order=['sharp','good','drift','danger'], bmax=Math.max(0.0001,...order.map(b=>bb[b]||0));
+    h+=order.map(b=>{ const v=bb[b]||0, w=Math.round((v/bmax)*100), col=b==='danger'?'var(--red)':b==='drift'?'var(--amber)':'var(--accent)';
+      return `<div class="hbar"><span class="hl">${ZBAND_EMOJI[b]||''} ${b}</span><span class="ht"><i style="width:${w}%;background:${col}"></i></span><span class="hv">${usd(v)}</span></div>`;
+    }).join('');
+    if(rd.auto_compactions) h+=`<p class="foot" style="text-align:left">↻ ${rd.auto_compactions} auto-compaction${rd.auto_compactions===1?'':'s'} in this window — each means context hit the wall; compacting manually sooner avoids the churn.</p>`;
+    h+=`<p class="foot" style="text-align:left;padding-top:6px">Output produced with a very full context is more likely to need rework, so this is spend that <b>may</b> be reducible by compacting earlier — <b>not</b> wasted money and not a judgment of your work. A rough estimate; re-reads aren’t counted.</p></div>`;
+  }
+  sc.innerHTML=h;
+}
+// set/clear an account's monthly plan price → server-persisted via /pref (keyed by account, not session)
+async function setPlanPrice(account){
+  if(typeof prompt!=='function')return;
+  const v=prompt('Monthly plan price (USD) for this account (blank = clear):','');
+  if(v===null)return;
+  const num=v.trim()===''?0:parseFloat(v);
+  try{ await fetch('/pref',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({account,plan_price:isNaN(num)?0:num})}); }catch(_){}
+  pollEfficiency();
+}
+async function pollEfficiency(){try{const r=await fetch('/efficiency');if(r.ok){window._eff=await r.json();renderEfficiency();}}catch(_){}}
+
+// ---- 🧠 Coach scene (V8): AI coaching + Session Autopsy. OFF the 10s live path (slow poll). ----
+// Slice A engine = "handoff": coach via your own Claude Code (the /claude-coach Skill); the Autopsy is a
+// content-free per-session report card. The in-app Claude/Ollama narrative lands in Slice B (host coach-worker).
+let autopsySid=null;
+const FAMCOL={opus:'var(--accent)',sonnet:'var(--green)',haiku:'var(--amber)',other:'var(--muted)'};
+function modelFam(m){ m=(m||'').toLowerCase();
+  return m.includes('opus')?'opus':m.includes('sonnet')?'sonnet':m.includes('haiku')?'haiku':'other'; }
+function fmtDur(s){ if(!s||s<0)return '—'; s=Math.round(s);
+  const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
+  return d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m`; }
+function coachAge(ts){ if(!ts)return ''; const d=Date.now()/1000-ts;
+  return d<3600?Math.round(d/60)+'m':d<86400?Math.round(d/3600)+'h':Math.round(d/86400)+'d'; }
+
+function renderCoach(){
+  const sc=document.getElementById('scene-coach'); if(!sc)return;
+  const c=window._coach;
+  let h='<h2>🧠 Coach</h2><p class="intro">Coaching from your <b>content-free</b> metrics (tokens, zones, '
+    +'event counts — never your conversation). Every figure is an <b>estimate</b>: opportunities, not judgments. '
+    +'Nothing leaves your network.</p>';
+  if(!c||c.enabled===false){ sc.innerHTML=h+'<div class="empty">No data yet — it builds as the collector records usage.</div>'; return; }
+  // — in-app narrative (Slice B): your own Claude (or a local Ollama) via the host coach-worker —
+  h+='<div class="lcard"><h3>Your coach</h3>';
+  if(c.narrative){
+    h+=`<div class="cnarr">${esc(c.narrative).replace(/\n/g,'<br>')}</div>`
+      +`<p class="foot" style="text-align:left;padding-top:6px">Generated by ${esc(c.narrative_engine||'your model')} from your content-free metrics${c.generated_at?' · '+esc(c.generated_at):''}. An estimate, not a judgment of your work.</p>`;
+  } else {
+    h+='<p class="foot" style="text-align:left">No in-app narrative yet. Generate one with your own Claude (or a local Ollama) — it runs on your machine, nothing leaves your network.</p>';
+  }
+  if(c.pending){
+    h+='<button class="genbtn" disabled>⏳ Generating… (your Claude is thinking)</button>';
+  } else {
+    h+=`<button class="genbtn" data-coach-gen>${c.narrative?'↻ Regenerate':'✨ Generate in-app'}</button>`
+      +'<p class="foot" style="text-align:left">Uses your own Claude (costs your tokens — kept lean) or a local Ollama if configured. Needs the host coach-worker (<code>./deploy-coach-worker.sh</code>).</p>';
+  }
+  h+='</div>';
+  // — Coach-me handoff (always available; Slice A engine) —
+  const ho=c.handoff||{}, cmd=ho.cmd||'/claude-coach';
+  h+='<div class="lcard"><h3>Coach me with Claude Code</h3>'
+    +`<p class="foot" style="text-align:left">${esc(ho.note||'Run this in your own Claude Code — it reads your local metrics and coaches you, no server or egress.')}</p>`
+    +`<code data-copy="${esc(cmd)}" class="mcpcmd">${esc(cmd)}<span class="cp">⧉ copy</span></code></div>`;
+  // — the content-free numbers it coaches on (the bundle) —
+  const b=c.bundle||{};
+  if(b.score!=null||b.messages){
+    h+='<div class="lcard"><h3>What it coaches on</h3>';
+    if(b.score!=null) h+=`<div class="hbar"><span class="hl">🏅 Craft score</span><span class="hv"><b>${b.score}</b> ${esc(b.grade||'')}</span></div>`;
+    if(b.healthy_pct!=null) h+=`<div class="hbar"><span class="hl">🟢 Healthy-zone time</span><span class="hv">${b.healthy_pct}%</span></div>`;
+    if(b.cache_ratio!=null) h+=`<div class="hbar"><span class="hl">🧊 Cache ratio</span><span class="hv">${Math.round(b.cache_ratio*100)}%</span></div>`;
+    h+=`<div class="hbar"><span class="hl">🧹 Compactions</span><span class="hv">${b.compaction_manual||0} manual · ${b.compaction_auto||0} auto</span></div>`;
+    h+=`<div class="hbar"><span class="hl">🛠️ Skills · 🤝 Subagents</span><span class="hv">${b.skill_use||0} · ${b.subagent_spawn||0}</span></div>`;
+    h+='</div>';
+  }
+  // — Session Autopsy —
+  h+='<div class="lcard"><h3>🔬 Session Autopsy</h3><p class="foot" style="text-align:left">A content-free report card for one session — pick one:</p>';
+  const rs=c.recent_sessions||[];
+  if(rs.length){
+    h+='<div class="apick">'+rs.map(s=>`<button class="achip${s.session_id===autopsySid?' on':''}" data-asid="${esc(s.session_id)}">${esc(projDisplay(s.project))} · ${s.messages}m · ${coachAge(s.ts)}</button>`).join('')+'</div>';
+  } else { h+='<div class="empty">No sessions recorded yet.</div>'; }
+  h+='<div id="autopsy-body">'+(autopsySid?'<div class="muted" style="padding:12px">loading…</div>':'<p class="foot" style="text-align:center;padding-top:8px">Select a session above.</p>')+'</div></div>';
+  sc.innerHTML=h;
+  if(autopsySid&&window._autopsy&&window._autopsy.session_id===autopsySid) renderAutopsy(window._autopsy);
+}
+
+function renderAutopsy(a){
+  const el=document.getElementById('autopsy-body'); if(!el)return;
+  if(!a||a.error){ el.innerHTML='<div class="empty">Couldn’t load that session.</div>'; return; }
+  const ev=a.events||{}, zt=a.zone_time||{};
+  let h='<div class="apgrid">'
+    +`<div class="apk"><span>cost</span><b>${usd(a.cost_usd)}</b></div>`
+    +`<div class="apk"><span>messages</span><b>${a.messages}</b></div>`
+    +`<div class="apk"><span>duration</span><b>${fmtDur(a.duration_secs)}</b></div>`
+    +`<div class="apk"><span>cache</span><b>${a.cache_ratio!=null?Math.round(a.cache_ratio*100)+'%':'—'}</b></div></div>`;
+  if((a.zone_series||[]).length>1){
+    h+='<div class="foot" style="text-align:left;margin-top:8px">Context trajectory (🟢→🟠→🔴 zones)</div>'+svgSpark(a.zone_series,{h:48});
+  }
+  if(zt.healthy_pct!=null) h+=`<div class="foot" style="text-align:left">🟢 ${zt.healthy_pct}% of turns in a healthy zone · ${zt.danger||0} in 🔴 Danger</div>`;
+  // model mix → family proportion bar
+  const mm=a.model_mix||{}, fams={};
+  Object.keys(mm).forEach(m=>{ const f=modelFam(m); fams[f]=(fams[f]||0)+mm[m]; });
+  const tot=Object.values(fams).reduce((x,y)=>x+y,0);
+  if(tot){
+    h+='<div class="foot" style="text-align:left;margin-top:6px">Model mix</div><div class="apmix">'
+      +['opus','sonnet','haiku','other'].map(f=>{ const v=fams[f]||0; if(!v)return ''; const w=Math.round(v/tot*100);
+        return `<span class="apseg" style="width:${w}%;background:${FAMCOL[f]}" title="${f}: ${w}%"></span>`; }).join('')+'</div>'
+      +'<div class="foot" style="text-align:left">'+['opus','sonnet','haiku','other'].filter(f=>fams[f]).map(f=>`${f} ${Math.round(fams[f]/tot*100)}%`).join(' · ')+'</div>';
+  }
+  // events
+  const chips=[];
+  if(ev.compaction_manual) chips.push(`🧹 ${ev.compaction_manual} manual compact`);
+  if(ev.compaction_auto) chips.push(`<span style="color:var(--red)">↻ ${ev.compaction_auto} auto-compact</span>`);
+  if(ev.skill_use) chips.push(`🛠️ ${ev.skill_use} skill`);
+  if(ev.subagent_spawn) chips.push(`🤝 ${ev.subagent_spawn} subagent`);
+  if(ev.tool_error) chips.push(`⚠ ${ev.tool_error} tool error`);
+  if(chips.length) h+='<div class="foot" style="text-align:left;margin-top:6px">'+chips.join(' · ')+'</div>';
+  if(a.prefix_overhead) h+=`<div class="foot" style="text-align:left">🧰 ~${fmtTok(a.prefix_overhead)}/turn context floor</div>`;
+  el.innerHTML=h;
+}
+
+async function pollCoach(){ try{const r=await fetch('/coach'); if(r.ok){window._coach=await r.json(); renderCoach();}}catch(_){} }
+// request a fresh in-app narrative → the host coach-worker picks it up → poll faster until it lands.
+async function requestCoach(){
+  try{ await fetch('/coach-request',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({account:(window._coach&&window._coach.account)||null})}); }catch(_){}
+  if(window._coach){ window._coach.pending=true; renderCoach(); }
+  let n=0; const t=setInterval(async()=>{ n++; await pollCoach();
+    if(n>=30 || (window._coach && !window._coach.pending)) clearInterval(t); }, 4000);   // ~2min max
+}
+async function loadAutopsy(sid){ autopsySid=sid; window._autopsy=null; renderCoach();
+  try{const r=await fetch('/autopsy?sid='+encodeURIComponent(sid)); const d=await r.json();
+    if(autopsySid===sid){ window._autopsy=r.ok?d:{error:true}; renderAutopsy(window._autopsy); } }
+  catch(_){ if(autopsySid===sid) renderAutopsy({error:true}); } }
+// delegated clicks on the coach scene (copy the handoff cmd + pick an Autopsy session). Listener on the scene
+// element itself → survives renderCoach()'s innerHTML rewrites.
+(function(){ const sc=document.getElementById('scene-coach'); if(!sc)return;
+  sc.addEventListener('click',e=>{
+    const cp=e.target.closest('[data-copy]');
+    if(cp){ copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp'); if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} }); return; }
+    if(e.target.closest('[data-coach-gen]')){ requestCoach(); return; }
+    const sb=e.target.closest('[data-asid]');
+    if(sb) loadAutopsy(sb.getAttribute('data-asid'));
+  });
+})();
+
+// ── 🔍 Search scene (V9): full-text recovery over RAW transcript content. The inverse of every other scene —
+// it shows your actual prose/paths/output, so: (1) it's local-only (the backend serves it ONLY on the loopback
+// content port; off-host clients get the wall), (2) opt-in (nothing indexed until you enable), (3) never masked
+// and always carries a do-not-screenshot banner. Snippets arrive with \x02/\x03 sentinels around hits — esc()
+// the whole thing FIRST (XSS-safe), THEN swap the sentinels for <mark>.
+let searchQ='';
+// Search filters (persisted per-device). KINDS = the 5 block kinds; searchKinds=null means "all".
+// searchSince = a relative WINDOW in seconds (0 = all time) → converted to an epoch cutoff at query time.
+const KINDS=[['user','🧑 You'],['assistant','🤖 Claude'],['thinking','🤔 Thinking'],['tool_use','🔧 Tool'],['tool_result','📄 Result']];
+const RANGES=[[0,'All'],[86400,'24h'],[604800,'7d'],[2592000,'30d']];
+let searchKinds=prefGet('search.kinds',null);   // null = all kinds; else array of included kinds
+let searchSince=prefGet('search.since',0);       // 0 = all time; else window seconds
+const kindActive=k=>!searchKinds||searchKinds.indexOf(k)>=0;
+function toggleKind(k){
+  let inc=searchKinds?searchKinds.slice():KINDS.map(x=>x[0]);
+  inc = inc.indexOf(k)>=0 ? inc.filter(x=>x!==k) : inc.concat([k]);
+  if(!inc.length) inc=KINDS.map(x=>x[0]);                 // never empty → snap back to all
+  searchKinds = inc.length===KINDS.length ? null : inc;   // all selected → no filter
+  prefSet('search.kinds',searchKinds); renderSearch(); runSearch();
+}
+function setRange(sec){ searchSince=sec; prefSet('search.since',sec); renderSearch(); runSearch(); }
+function searchFiltersHTML(){
+  return '<div class="sfilters"><div class="schips">'
+    +KINDS.map(([k,lbl])=>`<button class="fchip${kindActive(k)?' on':''}" data-fkind="${k}">${esc(lbl)}</button>`).join('')
+    +'</div><div class="schips">'
+    +RANGES.map(([s,lbl])=>`<button class="fchip${searchSince===s?' on':''}" data-frange="${s}">${esc(lbl)}</button>`).join('')
+    +'</div></div>';
+}
+// Search mode: 'keyword' (exact FTS) ⇄ 'semantic' (meaning-based, local Ollama embeddings).
+let searchMode=prefGet('search.mode','keyword');
+function setMode(m){ if(m===searchMode)return; searchMode=m; prefSet('search.mode',m); renderSearch(); runSearch(); }
+function searchModeHTML(em){
+  const semOk=em&&em.available;
+  return '<div class="smode">'
+    +`<button class="mchip${searchMode==='keyword'?' on':''}" data-smode="keyword">⌨ Keyword</button>`
+    +`<button class="mchip${searchMode==='semantic'?' on':''}${semOk?'':' off'}" data-smode="semantic">✨ Semantic</button>`
+    +'</div>';
+}
+function embedNoteHTML(em){
+  if(searchMode!=='semantic') return '';
+  em=em||{};
+  if(!em.available) return '<p class="foot enote" style="text-align:left">Semantic search needs a local Ollama embed model. Set <code>CC_EMBED_MODEL</code> (e.g. <code>nomic-embed-text</code>) and make sure Ollama is reachable.</p>';
+  const done=(em.embedded||0)+(em.skipped||0);
+  if((em.embedded||0)===0 && em.error) return `<p class="foot enote" style="text-align:left">⚠ Ollama embedding error: ${esc(em.error)} — check the model/host (semantic falls back to nothing until it’s reachable).</p>`;
+  if(done<(em.embeddable||0)) return `<p class="foot enote" style="text-align:left">⏳ Indexing embeddings… ${(em.embedded||0).toLocaleString()}/${(em.embeddable||0).toLocaleString()} (${esc(em.model||'')}). Semantic results improve as this fills.</p>`;
+  return `<p class="foot enote" style="text-align:left">✨ ${ (em.embedded||0).toLocaleString() } blocks embedded (${esc(em.model||'')}) — searching by meaning.${em.skipped?' '+em.skipped+' oversized block(s) skipped.':''}</p>`;
+}
+const SNIP_A=new RegExp('\\u0002','g'), SNIP_B=new RegExp('\\u0003','g');
+function markSnippet(s){ return esc(s).replace(SNIP_A,'<mark>').replace(SNIP_B,'</mark>'); }
+function searchStatsText(st){ st=st||{}; return (st.docs||0).toLocaleString()+' blocks · '+(st.sessions||0)
+  +' sessions indexed'+(st.last_indexed_ts?' · updated '+coachAge(st.last_indexed_ts):''); }
+function renderSearch(){
+  const sc=document.getElementById('scene-search'); if(!sc)return;
+  const m=window._searchMeta;
+  let h='<h2>🔍 Search</h2>';
+  if(!m){ sc.innerHTML=h+'<div class="empty">Loading…</div>'; return; }
+  if(!m.local){
+    h+='<div class="lcard"><h3>🔒 Local-only</h3>'
+      +'<p class="foot" style="text-align:left">This scene searches the <b>raw text</b> of your transcripts — your prose, '
+      +'file paths, command output, possibly secrets. To keep that off the network, it’s served <b>only on the machine '
+      +'that owns the transcripts</b>, never over the LAN or your phone.</p>'
+      +`<p class="foot" style="text-align:left">Open <a class="ulink" href="http://localhost:${esc(String(m.content_port||8100))}">http://localhost:${esc(String(m.content_port||8100))}</a> in a browser <b>on that machine</b> to search.</p></div>`;
+    sc.innerHTML=h; return;
+  }
+  if(!m.enabled){
+    h+='<div class="lcard"><h3>Enable content search</h3>'
+      +'<p class="foot" style="text-align:left">Builds a private full-text index of your transcripts so you can recover what '
+      +'you were doing after a compaction. <b>This is the only feature that writes your conversation content to disk</b> — '
+      +'everything else in this app stays content-free.</p>'
+      +'<ul class="sul"><li>Stores <b>raw conversation &amp; tool output — including any secrets that appeared</b> '
+      +'(tokens, keys in command output), <b>unredacted by default</b>.</li>'
+      +'<li>Local-only (<code>cc-content.db</code>) — never leaves your machine; <b>auto-deletes after 14 days</b>.</li>'
+      +'<li>Concerned? Turn on <b>secret redaction</b> / <b>conversation-only</b> below after enabling, and/or '
+      +'<b>encrypt your disk</b> (see docs). One click removes it all (Delete index).</li></ul>'
+      +'<button class="genbtn" data-search-enable>🔓 Enable content search</button></div>';
+    sc.innerHTML=h; return;
+  }
+  // enabled → do-not-screenshot banner + mode toggle + search box + filters + live stats + results + delete
+  const st=m.stats||{}, em=m.embed||{};
+  const ph = searchMode==='semantic' ? 'Search by meaning…' : 'Search your transcripts…';
+  h+='<div class="dosnap">⚠ Raw content — <b>do not screenshot or share</b>. Tool output &amp; file contents are searchable here.</div>'
+    +'<div class="lcard">'+searchModeHTML(em)
+    +'<div class="srow"><input id="search-q" type="search" placeholder="'+ph+'" autocomplete="off" spellcheck="false" value="'+esc(searchQ)+'">'
+    +'<button class="genbtn sgo" data-search-go>Search</button></div>'
+    +'<div id="search-enote">'+embedNoteHTML(em)+'</div>'
+    +searchFiltersHTML()
+    +`<p class="foot" id="search-stats" style="text-align:left">${searchStatsText(st)}</p>`
+    +'<div id="search-results"></div>'
+    +'<p class="foot" style="text-align:left;margin-top:12px"><button class="linklike" data-search-delete>🗑 Delete index</button> — turns search off and wipes <code>cc-content.db</code>.</p></div>'
+    +searchPrivacyHTML(m.config||{});
+  sc.innerHTML=h;
+  renderSearchResults();
+}
+function renderSearchResults(){
+  const el=document.getElementById('search-results'); if(!el)return;
+  const r=window._searchResults;
+  if(!r||!r.query){ el.innerHTML=''; return; }
+  if(r.error){ el.innerHTML='<div class="empty">Search failed.</div>'; return; }
+  const hits=r.results||[];
+  if(!hits.length){ el.innerHTML='<div class="empty">No matches for “'+esc(r.query)+'”.</div>'; return; }
+  el.innerHTML='<div class="foot" style="text-align:left;margin:10px 0 4px">'+hits.length+(hits.length>=40?'+':'')+' result'+(hits.length===1?'':'s')+'</div>'
+    +hits.map(x=>`<div class="shit" role="button" tabindex="0" data-open-sid="${esc(x.session_id)}" data-open-anchor="${esc(x.uuid||'')}" title="Open the conversation around this hit"><div class="shmeta">${badge({session_id:x.session_id})}`
+      +` <span class="sproj">${esc(x.project||'?')}</span> <span class="skind">${esc(x.kind||'')}</span>`
+      +(x.score!=null?` <span class="sscore">${Math.round(x.score*100)}% match</span>`:'')
+      +` <span class="sage">${coachAge(x.ts)}</span><span class="sopen">open ↗</span></div><div class="snip">${markSnippet(x.snippet||'')}</div></div>`).join('');
+}
+async function pollSearchMeta(){
+  try{ const r=await fetch('/search-meta'); if(!r.ok)return; const m=await r.json();
+    window._searchMeta=m;
+    const sig=(m.local?'L':'_')+(m.enabled?'E':'_');
+    if(sig!==window._searchSig){ window._searchSig=sig; renderSearch(); }   // state changed → full rebuild
+    else if(m.local&&m.enabled){ const se=document.getElementById('search-stats'); if(se)se.textContent=searchStatsText(m.stats);
+      const en=document.getElementById('search-enote'); if(en)en.innerHTML=embedNoteHTML(m.embed); }   // live embed progress
+  }catch(_){}
+}
+async function runSearch(){
+  const inp=document.getElementById('search-q'); if(inp)searchQ=inp.value;
+  const q=(searchQ||'').trim();
+  if(!q){ window._searchResults=null; renderSearchResults(); return; }
+  let url='/search?q='+encodeURIComponent(q);
+  if(searchMode==='semantic') url+='&mode=semantic';
+  if(searchKinds&&searchKinds.length) url+='&kinds='+encodeURIComponent(searchKinds.join(','));
+  if(searchSince>0) url+='&since='+Math.floor(Date.now()/1000-searchSince);   // relative window → epoch cutoff
+  try{ const r=await fetch(url); const d=await r.json();
+    window._searchResults = (r.ok && d.local!==false) ? {query:q, results:d.results||[]} : {error:true};
+  }catch(_){ window._searchResults={error:true}; }
+  renderSearchResults();
+}
+async function enableSearch(){
+  try{ await fetch('/search-enable',{method:'POST'}); }catch(_){}
+  window._searchSig=null; await pollSearchMeta();                         // flip to the enabled UI
+  let n=0; const t=setInterval(async()=>{ n++; await pollSearchMeta(); if(n>=20)clearInterval(t); },3000); // watch the backfill climb
+}
+async function deleteSearch(){
+  try{ await fetch('/search-delete',{method:'POST'}); }catch(_){}
+  window._searchResults=null; searchQ=''; window._searchSig=null; await pollSearchMeta();
+}
+// V13 2B — content-index privacy controls (retention / redaction / scope). Raw-content scene → local + PIN-gated.
+function searchPrivacyHTML(cfg){
+  cfg=cfg||{}; const rd=(cfg.retention_days==null)?14:cfg.retention_days;
+  const rdc=(d,lbl)=>`<span class="fchip${rd===d?' on':''}" data-cfg-retention="${d}" role="button" tabindex="0">${lbl}</span>`;
+  return '<div class="lcard"><h3>🔐 Privacy</h3>'
+    +'<p class="foot" style="text-align:left">Auto-delete content after: '
+      +rdc(7,'7d')+' '+rdc(14,'14d')+' '+rdc(30,'30d')+' '+rdc(90,'90d')+' '+rdc(0,'Off')+'</p>'
+    +(rd===0?'<p class="foot" style="text-align:left;color:var(--amber)">⚠ Off = kept until you Delete index — larger blast radius if this disk is ever compromised.</p>':'')
+    +'<p class="foot" style="text-align:left">Secret redaction (best-effort): '
+      +`<span class="fchip${cfg.redact?' on':''}" data-cfg-redact="${cfg.redact?'0':'1'}" role="button" tabindex="0">${cfg.redact?'ON':'OFF'}</span> `
+      +'<span style="opacity:.6">masks keys/tokens at index time (newly-indexed content)</span></p>'
+    +'<p class="foot" style="text-align:left">Index scope: '
+      +`<span class="fchip${cfg.scope!=='conversation'?' on':''}" data-cfg-scope="all" role="button" tabindex="0">Everything</span> `
+      +`<span class="fchip${cfg.scope==='conversation'?' on':''}" data-cfg-scope="conversation" role="button" tabindex="0">Conversation-only</span> `
+      +'<span style="opacity:.6">conversation-only excludes tool output — the biggest secret source</span></p>'
+    +'<p class="foot" style="text-align:left;opacity:.6">Redaction/scope apply to newly-indexed content; retention purges existing on the next cycle. At-rest encryption is your host’s job (FileVault/BitLocker/LUKS) — see docs/CONTENT_PRIVACY.md.</p></div>';
+}
+async function setContentConfig(patch){
+  try{ await fetch('/content-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)}); }
+  catch(_){}
+  window._searchSig=null; await pollSearchMeta();   // re-render with the new config
+}
+(function(){ const sc=document.getElementById('scene-search'); if(!sc)return;
+  sc.addEventListener('click',e=>{
+    if(e.target.closest('[data-search-enable]')){ enableSearch(); return; }
+    if(e.target.closest('[data-search-delete]')){ deleteSearch(); return; }
+    if(e.target.closest('[data-search-go]')){ runSearch(); return; }
+    const sm=e.target.closest('[data-smode]'); if(sm){ setMode(sm.getAttribute('data-smode')); return; }
+    const fk=e.target.closest('[data-fkind]'); if(fk){ toggleKind(fk.getAttribute('data-fkind')); return; }
+    const fr=e.target.closest('[data-frange]'); if(fr){ setRange(parseInt(fr.getAttribute('data-frange'),10)||0); return; }
+    const cr=e.target.closest('[data-cfg-retention]'); if(cr){ setContentConfig({retention_days:parseInt(cr.getAttribute('data-cfg-retention'),10)}); return; }
+    const cd=e.target.closest('[data-cfg-redact]'); if(cd){ setContentConfig({redact:cd.getAttribute('data-cfg-redact')==='1'}); return; }
+    const cs=e.target.closest('[data-cfg-scope]'); if(cs){ setContentConfig({scope:cs.getAttribute('data-cfg-scope')}); return; }
+    const hit=e.target.closest('[data-open-sid]');
+    if(hit){ openConvo(hit.getAttribute('data-open-sid'), hit.getAttribute('data-open-anchor')); return; }
+  });
+  sc.addEventListener('input',e=>{ if(e.target&&e.target.id==='search-q') searchQ=e.target.value; });
+  sc.addEventListener('keydown',e=>{
+    if(e.target&&e.target.id==='search-q'&&e.key==='Enter'){ e.preventDefault(); runSearch(); return; }
+    const hit=e.target.closest&&e.target.closest('[data-open-sid]');   // keyboard-open a focused result
+    if(hit&&(e.key==='Enter'||e.key===' ')){ e.preventDefault(); openConvo(hit.getAttribute('data-open-sid'), hit.getAttribute('data-open-anchor')); }
+  });
+})();
+
+// 🔍 Conversation reader (V9 Slice 3): click a hit → full-screen overlay of that session's conversation,
+// windowed around the match (load-more both ways), the hit highlighted + scrolled into view. RAW content,
+// so it lives only on the content port (the /search-context endpoint walls off-host) and inherits the
+// do-not-screenshot posture. Query terms are re-highlighted client-side (esc() first → XSS-safe).
+const CONVO_ICON={user:'🧑',assistant:'🤖',thinking:'🤔',tool_use:'🔧',tool_result:'📄'};
+const CONVO_WHO={user:'You',assistant:'Claude',thinking:'thinking',tool_use:'tool',tool_result:'tool result'};
+let convoSid=null, convoTopPos=null, convoBotPos=null;
+function convoTerms(){ return (((window._searchResults&&window._searchResults.query)||'').match(/\S+/g)||[]); }
+function hlText(t){
+  let s=esc(t);
+  for(const term of convoTerms()){
+    if(!term)continue;
+    const re=new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');
+    s=s.replace(re,m=>'<mark>'+m+'</mark>');   // term wrapped in literal <mark> — inserted into already-esc()'d text, so XSS-safe
+  }
+  return s.replace(/\n/g,'<br>');
+}
+function convoBlockHTML(b){
+  const k=b.kind||'assistant';
+  return `<div class="cvb${b.hit?' cvhit':''}" data-pos="${b.pos}"><div class="cvwho">${CONVO_ICON[k]||'•'} ${esc(CONVO_WHO[k]||k)}${b.ts?' · '+coachAge(b.ts):''}</div><div class="cvtext">${hlText(b.text||'')}</div></div>`;
+}
+async function openConvo(sid, anchor){
+  convoSid=sid; const body=document.getElementById('convobody'); const modal=document.getElementById('convo');
+  if(body)body.innerHTML='<div class="muted" style="padding:16px">loading…</div>';
+  if(modal)modal.hidden=false;
+  try{
+    const r=await fetch('/search-context?sid='+encodeURIComponent(sid)+(anchor?'&anchor='+encodeURIComponent(anchor):''));
+    const d=await r.json();
+    if(convoSid!==sid)return;
+    if(!r.ok||!d.blocks){ if(body)body.innerHTML='<div class="empty">Couldn’t load that conversation.</div>'; return; }
+    renderConvo(d.blocks, d.has_more_before, d.has_more_after);
+    // scroll the hit into view
+    const hb=document.querySelector('#convobody .cvhit'); if(hb)hb.scrollIntoView({block:'center'});
+  }catch(_){ if(body)body.innerHTML='<div class="empty">Couldn’t load that conversation.</div>'; }
+}
+function renderConvo(blocks, moreB, moreA){
+  const body=document.getElementById('convobody'); if(!body)return;
+  if(!blocks.length){ body.innerHTML='<div class="empty">No content for that session.</div>'; return; }
+  convoTopPos=blocks[0].pos; convoBotPos=blocks[blocks.length-1].pos;
+  body.innerHTML=(moreB?'<button class="genbtn cvmore" data-cv-up>↑ load earlier</button>':'')
+    +blocks.map(convoBlockHTML).join('')
+    +(moreA?'<button class="genbtn cvmore" data-cv-down>↓ load later</button>':'');
+}
+async function convoMore(dir){
+  if(!convoSid)return;
+  const param=dir==='up'?('before_pos='+convoTopPos):('after_pos='+convoBotPos);
+  try{
+    const r=await fetch('/search-context?sid='+encodeURIComponent(convoSid)+'&'+param); const d=await r.json();
+    if(!r.ok||!d.blocks||!d.blocks.length){ return; }
+    const body=document.getElementById('convobody'); if(!body)return;
+    const html=d.blocks.map(convoBlockHTML).join('');
+    if(dir==='up'){
+      convoTopPos=d.blocks[0].pos;
+      const upbtn=body.querySelector('[data-cv-up]');
+      const frag=document.createElement('div'); frag.innerHTML=html;
+      const anchorEl=upbtn?upbtn.nextSibling:body.firstChild; const h0=anchorEl?anchorEl.offsetTop:0;
+      while(frag.firstChild) body.insertBefore(frag.firstChild, anchorEl);
+      if(!d.has_more_before&&upbtn) upbtn.remove();
+      else if(!upbtn) body.insertAdjacentHTML('afterbegin','<button class="genbtn cvmore" data-cv-up>↑ load earlier</button>');
+      // keep the viewport stable after prepending
+      if(anchorEl) body.scrollTop += anchorEl.offsetTop - h0;
+    } else {
+      convoBotPos=d.blocks[d.blocks.length-1].pos;
+      const dnbtn=body.querySelector('[data-cv-down]');
+      if(dnbtn) dnbtn.insertAdjacentHTML('beforebegin',html); else body.insertAdjacentHTML('beforeend',html);
+      if(!d.has_more_after&&dnbtn) dnbtn.remove();
+    }
+  }catch(_){}
+}
+function closeConvo(){ const m=document.getElementById('convo'); if(m)m.hidden=true; convoSid=null; }
+(function(){ const m=document.getElementById('convo'); if(!m)return;
+  m.addEventListener('click',e=>{
+    if(e.target===m){ closeConvo(); return; }                  // backdrop closes
+    if(e.target.closest('#convoclose')){ closeConvo(); return; }
+    if(e.target.closest('[data-cv-up]')){ convoMore('up'); return; }
+    if(e.target.closest('[data-cv-down]')){ convoMore('down'); return; }
+  });
+})();
+
+// 🧩 MCP scene (MCP tax Slice 2): per host, the configured MCP servers (from the self-serve probe) crossed
+// with observed usage → the dead-weight list. Honest scope: "used" = called in a CURRENT live session; true
+// over-time "never called" needs the event backfill (a later slice) → with no live session, usage is unknown.
+const MCP_GLYPH={connected:'✓',needs_auth:'!',failed:'✗',unknown:'?'};
+const MCP_COL={connected:'var(--green)',needs_auth:'var(--amber)',failed:'var(--red)',unknown:'var(--muted)'};
+function mcpSetup(){
+  const cmd='CC_URL='+location.origin+' CC_INGEST_TOKEN=<your-ingest-token> python3 mcp_probe.py';
+  return `<div class="lcard"><h3>Set up MCP tracking</h3>`
+    +`<p class="foot" style="text-align:left">The dashboard can’t read your config (no <code>claude</code> in the container). Run the probe on the host — it ships <b>server names + status only</b>, never commands / URLs / tokens:</p>`
+    +`<code data-copy="${esc(cmd)}" class="mcpcmd">${esc(cmd)}<span class="cp">⧉ copy</span></code>`
+    +`<p class="foot" style="text-align:left">Get <code>mcp_probe.py</code> from the repo; use the dashboard’s <code>CC_INGEST_TOKEN</code> (same one the watcher uses). Re-run after changing your servers (a SessionStart hook or daily timer keeps it fresh).</p></div>`;
+}
+// Detailed "?" help for the 🧩 scene — what it's for, how to populate it (probe), how to keep it fresh
+// (a paste-to-Claude prompt that wires the OS-native scheduler), and how to read the payoff. Copyable blocks
+// avoid " and ` so they survive the esc()-into-attribute round-trip (esc() escapes <>& only).
+function mcpHelpBody(){
+  const url=location.origin;
+  const probe='CC_URL='+url+' CC_INGEST_TOKEN=<your-ingest-token> python3 mcp_probe.py';
+  const autorun=[
+    'Set up my MCP server list to sync automatically to my cc-observability dashboard.','',
+    'There is a script, mcp_probe.py, in my cc-observability repo. It runs claude mcp list, keeps ONLY each '
+      +'server name and its connection status (it strips every command, URL and token), and POSTs that to the '
+      +'dashboard. No secrets are sent and nothing leaves my network.','',
+    'Please make it run automatically on THIS machine. Detect my OS and use the native scheduler:',
+    '  - Linux: a systemd --user timer (preferred) or a crontab entry, once a day',
+    '  - macOS: a launchd LaunchAgent in ~/Library/LaunchAgents, once a day',
+    '  - Windows: a Scheduled Task via schtasks, once a day','',
+    'When it runs it needs two values in the environment:',
+    '  CC_URL='+url,
+    '  CC_INGEST_TOKEN=<the dashboard ingest token, the SAME token the watcher uses>','',
+    'Read CC_INGEST_TOKEN from my cc-observability .env (or a secrets manager). Do NOT hardcode it into a '
+      +'world-readable script or plist, and keep it out of logs and shell history.','',
+    'If it is easy, also add a Claude Code SessionStart hook that runs the same command, so the list refreshes '
+      +'whenever I start a session.','',
+    'Finally: install the schedule, run it once now to prove it works, and show me how to check later that it '
+      +'is still running.'
+  ].join('\n');
+  return ''
+    +`<h4>What this scene is for</h4>`
+    +`<p>Every MCP server you enable injects its tool definitions into <b>every</b> turn Claude takes — a `
+      +`permanent <b>context tax</b> you pay whether or not you ever call that server. This scene shows what `
+      +`you have <b>configured</b> vs. what you’ve actually <b>used</b>, so you can switch off the dead weight `
+      +`and shrink the tax.</p>`
+    +`<p class="note">🔒 <b>Names + status only.</b> The dashboard never reads <code>~/.claude.json</code>, `
+      +`never runs <code>claude mcp get</code>, and never sees a command, URL, or token. Nothing leaves your network.</p>`
+
+    +`<h4>1 · Populate it — run the probe on each host</h4>`
+    +`<p>The dashboard can’t read your config (there’s no <code>claude</code> CLI inside the container), so a `
+      +`tiny host-side script does it. Grab <code>mcp_probe.py</code> from the repo and run it on each machine `
+      +`where you use Claude:</p>`
+    +`<code class="hcmd" data-copy="${esc(probe)}">${esc(probe)}<span class="cp">⧉ copy</span></code>`
+    +`<p>Swap <code>&lt;your-ingest-token&gt;</code> for the dashboard’s <code>CC_INGEST_TOKEN</code> — the same `
+      +`token your watchers use (it’s in this host’s <code>.env</code>).</p>`
+
+    +`<h4>2 · Keep it fresh automatically</h4>`
+    +`<p>Your MCP list changes over time, so the probe should re-run on a schedule. Paste this to your `
+      +`<b>Claude Code</b> and it’ll wire up the right mechanism for your OS (systemd timer / launchd / `
+      +`Scheduled Task) plus a SessionStart hook:</p>`
+    +`<code class="hcmd" data-copy="${esc(autorun)}">${esc(autorun)}<span class="cp">⧉ copy</span></code>`
+
+    +`<h4>3 · Read the results &amp; see the payoff</h4>`
+    +`<ul>`
+    +`<li><b>Dead weight</b> = a server that’s configured but <b>hasn’t been called in the last 30 days</b>. `
+      +`Each one is pure context tax — disable it in your Claude config.</li>`
+    +`<li><b>● live</b> badges and call counts show what you genuinely use — keep those.</li>`
+    +`<li>The <b>context floor</b> card at the top is the real billed cached tokens every turn starts with. `
+      +`Trim dead-weight servers → re-run the probe → watch <b>configured</b> drop and the floor median fall `
+      +`over time. That’s how you confirm it’s working.</li>`
+    +`</ul>`
+    +`<p class="note">⚖️ Honest scope: the floor is the <b>whole</b> cached prefix (system + tools + project `
+      +`memory + all MCP defs), <b>not MCP-only</b> — isolating per-server cost would need your server schemas, `
+      +`which this tool refuses to read. “Used” is measured from <code>mcp_call</code> events over the last 30 days.</p>`;
+}
+function renderMcp(){
+  const sc=document.getElementById('scene-mcp'); if(!sc)return;
+  const d=window._mcp;
+  let h='<div class="mcphead"><h2>🧩 MCP tax</h2><button class="helpq" data-mcphelp title="How this works">?</button></div>'
+    +'<p class="intro">Every enabled MCP server injects its tool definitions into '
+    +'<b>every</b> turn — permanent context tax, whether you call it or not. Here’s what’s configured vs. actually '
+    +'used, so you can trim the dead weight. <b>Names + status only — no secrets, no egress.</b></p>';
+  // Slice 3 — the context-floor "token tax": REAL billed cached prefix every turn starts with.
+  const fl=d&&d.floor;
+  if(fl&&fl.median){
+    const pctSharp=Math.round(fl.median/ZONE_TOK.good*100);
+    h+=`<div class="lcard" style="text-align:center">
+        <div style="font-size:32px;font-weight:800;color:var(--accent);text-shadow:0 0 12px var(--accent)">~${fmtTok(fl.median)}</div>
+        <div class="foot">median <b>context floor</b> — cached tokens every turn starts with (tools + system + project memory + MCP tool defs), across ${fl.sessions} recent session${fl.sessions===1?'':'s'}</div>
+        <div class="foot" style="margin-top:4px">that’s <b>${pctSharp}%</b> of the 🟢 Sharp zone (${fmtTok(ZONE_TOK.good)}) <b>before you type</b> · p90 ~${fmtTok(fl.p90)} · peak ~${fmtTok(fl.max)}</div></div>`;
+    h+=`<div class="lcard"><p class="foot" style="text-align:left;margin:0">These are <b>real billed tokens</b> (cache_creation + cache_read on each session’s first turn) — not an estimate. It’s the <b>whole</b> cached prefix, <b>not MCP-only</b>: isolating per-server MCP cost would need your server schemas/config, which this tool <b>refuses to read</b> (no secrets). Trimming the dead-weight servers below shrinks this floor.</p></div>`;
+  }
+  const hosts=(d&&d.enabled!==false&&d.hosts)||[];
+  if(!hosts.length){ sc.innerHTML=h+'<div class="empty">No MCP reports yet — set up the probe below.</div>'+mcpSetup(); return; }
+  const wd=(d&&d.window_days)||30, nowS=Date.now()/1000;
+  hosts.forEach(ht=>{
+    h+=`<div class="lcard"><h3>${esc(hostDisplay(ht.host))}</h3>`;
+    h+=`<div class="foot" style="text-align:left">${ht.configured} configured · <b>${ht.used}</b> used · <b style="color:var(--amber)">${ht.dead}</b> dead weight <span class="muted">(last ${wd}d)</span>`
+      +`${ht.age_secs!=null?' · probed '+dur(ht.age_secs)+' ago':''}</div>`;
+    h+=(ht.servers||[]).map(s=>{
+      const glyph=MCP_GLYPH[s.status]||'?', col=MCP_COL[s.status]||'var(--muted)';
+      const lastAgo=s.last_ts?dur(Math.max(0,nowS-s.last_ts))+' ago':'';
+      const use=s.used
+        ?(s.calls+' call'+(s.calls===1?'':'s')+(lastAgo?' · '+lastAgo:'')+(s.live?' · <span style="color:var(--green)">●live</span>':''))
+        :`<span class="ms-dead">unused · ${wd}d</span>`;
+      return `<div class="mcpsrv${s.used?'':' dead'}"><span class="ms-st" title="${esc(s.status||'')}" style="color:${col}">${glyph}</span><span class="ms-name">${esc(s.name)}</span><span class="ms-use">${use}</span></div>`;
+    }).join('');
+    h+='</div>';
+  });
+  sc.innerHTML=h+mcpSetup();
+}
+async function pollMcp(){try{const r=await fetch('/mcp');if(r.ok){window._mcp=await r.json();renderMcp();}}catch(_){}}
+// delegated copy on the MCP scene (the "Set up MCP tracking" command). Listener on the scene element itself
+// → survives renderMcp()'s innerHTML rewrites. Mirrors the coach-scene copy handler.
+(function(){ const sc=document.getElementById('scene-mcp'); if(!sc)return;
+  sc.addEventListener('click',e=>{
+    if(e.target.closest('[data-mcphelp]')){ openMcpHelp(); return; }
+    const cp=e.target.closest('[data-copy]'); if(!cp)return;
+    copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
+      if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
+  });
+})();
+
+// ---- dumb-zone v2 (data-derived): tool-error rate vs context fill, the measured "knee" from /drift ----
+// Honest by construction: if the data shows no upward knee, we say so (and keep the v1 heuristic). Tool
+// errors are only one degradation proxy — correlational, not causal. Fills the placeholder in the Help card.
+const ZBAND_EMOJI={sharp:'🟢',good:'🟡',drift:'🟠',danger:'🔴'};
+const fmtRate=r=>r==null?'—':(r*100).toFixed(1)+'%';
+function renderDrift(){
+  const el=document.getElementById('drift-card'); if(!el)return;
+  const d=window._drift, o=d&&d.overall;
+  if(!d||d.enabled===false||!o||!o.messages||!o.errors){ el.innerHTML=''; return; }   // nothing measured yet
+  const max=Math.max(0.0001,...o.bands.map(b=>b.rate||0));
+  let h='<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px">'
+    +'<h4 style="margin:0 0 4px;font-size:13px">📊 Measured from <b>your</b> history</h4>'
+    +`<p class="foot" style="text-align:left;margin:0 0 6px">Tool-error rate by context band (${fmt(o.messages)} msgs · ${fmt(o.errors)} errors):</p>`;
+  for(const b of o.bands){
+    const w=Math.round(((b.rate||0)/max)*100), kn=(b.band===o.knee_band);
+    h+=`<div class="hbar"><span class="hl">${ZBAND_EMOJI[b.band]||''} ${esc(b.band)}</span>`
+      +`<span class="ht"><i style="width:${w}%;background:${kn?'var(--red)':'var(--accent)'}"></i></span>`
+      +`<span class="hv">${fmtRate(b.rate)}</span></div>`;
+  }
+  if(o.knee_band)
+    h+=`<p class="foot" style="text-align:left;color:var(--amber)">⚠ Your tool errors climb in the <b>${esc(o.knee_band)}</b> band (~${fmt(o.knee_tokens)} tokens) — compacting before then may keep you sharper.</p>`;
+  else
+    h+='<p class="foot" style="text-align:left">No upward knee detected — your tool-error rate doesn’t rise as context fills. '
+      +'(Tool errors are only one degradation proxy; subtler quality drift can still occur, so the zone thresholds stay a research-informed heuristic.)</p>';
+  const bm=d.by_model||{}, lines=Object.keys(bm).map(m=>{const c=bm[m]; return c?`${esc(m)}: ${c.knee_band?'knee ~'+fmt(c.knee_tokens):'no knee'}`:null;}).filter(Boolean);
+  if(lines.length) h+=`<p class="foot muted" style="text-align:left">Per model — ${lines.join(' · ')}</p>`;
+  h+='<p class="foot muted" style="text-align:left">Correlational, not causal (hard tasks both fill context and cause errors) — an estimate.</p></div>';
+  el.innerHTML=h;
+}
+async function fetchDrift(){try{const r=await fetch('/drift');if(r.ok){window._drift=await r.json();renderDrift();}}catch(_){}}
+
+// ---- Fleet scene: the /hosts health, expanded from the top strip into a per-host card list ----
+function renderFleetScene(d){
+  const sc=document.getElementById('scene-fleet'); if(!sc)return;
+  d=d||window._hosts||{}; const hosts=d.hosts||[], rej=d.rejected||[];
+  const word={green:'reporting · fresh',amber:'lagging',red:'not reporting'};
+  let h='<h2>Fleet</h2><p class="intro">Which machines are checking in — and whether any sender is being refused. '
+    +'Lets you tell “idle but healthy” from “watcher down”.</p>';
+  if(!hosts.length&&!rej.length){ sc.innerHTML=h+'<div class="empty">No hosts reporting yet.</div>'; return; }
+  for(const x of hosts){
+    h+=`<div class="lcard"><h3><span class="hdot ${esc(x.status)}"></span>${esc(hostDisplay(x.host))}</h3><dl class="lterm">
+      <dt>Status</dt><dd>${word[x.status]||esc(x.status||'?')}</dd>
+      <dt>Last report</dt><dd>${rel(x.age_secs)} ago</dd>
+      <dt>Sessions</dt><dd>${x.sessions||0}</dd>
+      <dt>Source</dt><dd>${esc(x.source||'?')}</dd>
+    </dl></div>`;
+  }
+  for(const x of rej){
+    h+=`<div class="lcard" style="border-color:rgba(255,51,102,.4)"><h3 style="color:var(--red)">⚠ Rejected sender</h3><dl class="lterm">
+      <dt>From</dt><dd>${esc(maskIP(x.ip))}</dd>
+      <dt>Refused</dt><dd>${x.count} POST${x.count===1?'':'s'} · ${rel(x.age_secs)} ago</dd>
+      <dt>Likely</dt><dd>bad or missing ingest token</dd>
+    </dl></div>`;
+  }
+  sc.innerHTML=h;
+}
+
+// ---- Archive scene: sessions the user hid from Triage (server-persisted, so it follows them across devices) ----
+function renderArchive(){
+  const sc=document.getElementById('scene-archive'); if(!sc)return;
+  const hidden=(window._list||[]).filter(s=>s.hidden);
+  let h='<h2>Archive</h2><p class="intro">Sessions you’ve hidden from Triage. This list follows you across devices. Tap “un-hide” to bring one back.</p>';
+  if(!hidden.length){ sc.innerHTML=h+'<div class="empty">Nothing archived.<br>Open a session and tap “Archive” to tuck it away.</div>'; return; }
+  for(const s of hidden){
+    h+=`<div class="row" data-unhide="${s.session_id}">
+      <div class="who">${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span></div>
+      <div class="pct"><button class="ubtn">♻ un-hide</button></div>
+      <div class="sub"><span>${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}</span><span>${Math.round(s.pct)}% · ${rel(s.age_secs)}</span></div>
+    </div>`;
+  }
+  sc.innerHTML=h;
+}
+document.getElementById('scene-archive').addEventListener('click',e=>{
+  const r=e.target.closest('[data-unhide]'); if(r)unhideSession(r.getAttribute('data-unhide'));
+});
+// hide/un-hide → server-persisted via /pref. Optimistically mutate the shared snapshot object (so it's the
+// same ref in window._list / window._cards) and re-render; the next /state tick confirms from the server.
+async function setPref(sid,patch){
+  try{ const r=await fetch('/pref',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({session_id:sid,...patch})}); const d=await r.json().catch(()=>({})); return r.ok&&d.ok; }
+  catch(_){return false;}
+}
+function setHidden(sid,hidden){
+  const s=(window._cards||{})[sid]; if(s)s.hidden=hidden;   // same object as in window._list → optimistic
+  setPref(sid,{hidden});
+  render(window._list||[]);
+  if(openSid===sid)renderDetailStats();
+}
+const hideSession=sid=>setHidden(sid,true), unhideSession=sid=>setHidden(sid,false);
+
+// ---- drill-in detail + live activity stream (on-demand: only the open session is streamed) ----
+const detail=document.getElementById('detail'), dtitle=document.getElementById('dtitle'),
+      dstats=document.getElementById('dstats'), dstream=document.getElementById('dstream'),
+      dlive=document.getElementById('dlive');
+let openSid=null, actTimer=null, histPts=[], evData=null;
+const dreply=document.getElementById('dreply'), rtext=document.getElementById('rtext'),
+      rsend=document.getElementById('rsend'), rmsg=document.getElementById('rmsg');
+document.getElementById('dback').onclick=closeDetail;
+app.addEventListener('click',e=>{const el=e.target.closest('[data-sid]');if(el)openDetail(el.getAttribute('data-sid'));});
+// copy-to-clipboard for the resume command (clipboard API + execCommand fallback for HTTP/older browsers)
+async function copyText(t){
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(t);return true;} }catch(_){}
+  try{ const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();
+    const ok=document.execCommand('copy');document.body.removeChild(ta);return ok; }catch(_){return false;}
+}
+dstats.addEventListener('click',e=>{
+  const cp=e.target.closest('[data-copy]');
+  if(cp){ copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp'); if(!c)return;
+    const o=c.textContent; c.textContent=ok?'✓ copied':'⚠ copy failed'; setTimeout(()=>{c.textContent=o;},1500); }); return; }
+  const ac=e.target.closest('[data-action]');
+  if(ac&&openSid){ const a=ac.getAttribute('data-action'); if(a==='hide')hideSession(openSid); else if(a==='unhide')unhideSession(openSid); }
+});
+function openDetail(sid){openSid=sid;histPts=[];evData=null;detail.hidden=false;dstream.innerHTML='<div class="muted" style="padding:20px">loading…</div>';
+  rtext.value='';setRmsg('');autosize();renderDetailStats();fetchHistory(sid);fetchEvents(sid);pollAct();if(actTimer)clearInterval(actTimer);actTimer=setInterval(pollAct,2500);}
+// context trajectory for the sparkline — fetched once on open (it grows slowly); re-renders stats when it lands.
+async function fetchHistory(sid){
+  try{const r=await fetch('/history?id='+encodeURIComponent(sid)); if(!r.ok)return; const d=await r.json();
+    if(openSid===sid){ histPts=d.points||[]; renderDetailStats(); }}catch(_){}
+}
+// behavioral-event counts (Phase 6): compactions (manual/auto), skills, subagents, errors — fetched on open.
+async function fetchEvents(sid){
+  try{const r=await fetch('/session-events?id='+encodeURIComponent(sid)); if(!r.ok)return; const d=await r.json();
+    if(openSid===sid){ evData=d; renderDetailStats(); }}catch(_){}
+}
+function evChips(c){
+  if(!c) return ''; const parts=[];
+  const comp=c.compaction||0;
+  if(comp){ const m=c.compaction_manual||0, a=c.compaction_auto||0, det=a?` (${m} manual · ${a} auto)`:` (${m} manual)`;
+    parts.push(`<span${a?' style="color:var(--red)"':''} title="manual /compact is the responsible move; auto-compact counts against you">🗜 ${comp} compact${det}</span>`); }
+  if(c.skill_use)      parts.push(`<span title="Skills invoked">🛠 ${c.skill_use} skill${c.skill_use>1?'s':''}</span>`);
+  if(c.subagent_spawn) parts.push(`<span title="Subagents spawned">▸ ${c.subagent_spawn} subagent${c.subagent_spawn>1?'s':''}</span>`);
+  if(c.tool_error)     parts.push(`<span title="Tool errors">⚠ ${c.tool_error} error${c.tool_error>1?'s':''}</span>`);
+  return parts.join(' · ');
+}
+function closeDetail(){openSid=null;detail.hidden=true;dreply.hidden=true;if(actTimer){clearInterval(actTimer);actTimer=null;}}
+// 🧩 MCP observed-usage chips (Slice 1, "MCP tax"): which MCP servers this session actually CALLED, sorted
+// busiest-first. Just observed usage — the per-server token cost ("tax") comes in a later slice. Empty → ''.
+function mcpChips(mcp){
+  const keys=Object.keys(mcp||{}); if(!keys.length)return '';
+  keys.sort((a,b)=>(mcp[b].calls||0)-(mcp[a].calls||0));
+  const tot=keys.reduce((a,k)=>a+(mcp[k].calls||0),0);
+  const chips=keys.map(k=>{
+    const m=mcp[k]||{}, n=(m.tools||[]).length, err=m.errors||0;
+    const tip=`${k}: ${m.calls} call${m.calls===1?'':'s'} across ${n} tool${n===1?'':'s'}${err?', '+err+' error'+(err===1?'':'s'):''}`;
+    return `<span class="mcpchip${err?' err':''}" title="${esc(tip)}">🧩 ${esc(k)} · ${m.calls}×${n>1?' · '+n+' tools':''}${err?' ⚠'+err:''}</span>`;
+  }).join('');
+  return `<div class="mcprow"><span class="mcphdr">🧩 MCP used · ${keys.length} server${keys.length===1?'':'s'} · ${tot} call${tot===1?'':'s'}</span>${chips}</div>`;
+}
+function renderDetailStats(){
+  const s=(window._cards||{})[openSid]; if(!s)return;
+  const z=zone(s), c=color(s.pct);   // % always = compaction color; the banner below carries the dumb-zone color
+  dtitle.innerHTML=`${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span>`;
+  dstats.innerHTML=`${feat.dumbzone?`<div class="zone z-${z.key}"><span class="zl">${z.emoji} ${z.label}</span><span class="za">${esc(z.advice)}</span></div>`:''}
+    <div class="drow"><b style="color:${c}">${Math.round(s.pct)}%</b> of ${fmt(s.window)} · ~${fmt(s.tokens_until_compact)} to compact</div>
+    ${s.eta_secs?`<div class="drow">⏱ <b>${dur(s.eta_secs)}</b> to compact · +${s.growth_tpm||0} tok/min</div>`:''}
+    ${feat.dumbzone&&histPts.length>1?`<div class="spark"><span class="sl">📈 context trajectory · ${histPts.length} pts</span>${svgSpark(histPts)}</div>`:''}
+    ${evData&&evData.counts&&Object.keys(evData.counts).length?`<div class="evrow">${evChips(evData.counts)}</div>`:''}
+    ${feat.mcptax?mcpChips(s.mcp_observed):''}
+    ${feat.mcptax&&s.prefix_tokens?`<div class="foot" style="text-align:left;margin-top:2px">🧰 starts at ~${fmtTok(s.prefix_tokens)}/turn cached (tools + system + memory + MCP defs)</div>`:''}
+    <div class="drow muted">${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))} · ${esc(s.model||'')}${s.cost_usd!=null?' · '+(s.cost_est?'~':'')+usd(s.cost_usd):''}${s.subagent_running>0?' · ▸'+s.subagent_running+' subagent':''}</div>
+    ${resumeHint(s)}
+    <div class="dactions">${s.hidden
+      ?'<button data-action="unhide">♻ Un-hide</button>'
+      :'<button data-action="hide">🗂 Archive (hide from Triage)</button>'}</div>`;
+  updateReplyBar(s);
+}
+// Resume hint: how to pick this session back up in a terminal. The transcript snapshot doesn't carry the
+// cwd, so we give the host/project-scoped `claude --resume <id>` (run it on that host, in that project) +
+// a copy button — honest about what we know rather than guessing a `cd` path.
+function resumeHint(s){
+  if(!s||!s.session_id)return '';
+  const cmd='claude --resume '+s.session_id;
+  return `<div class="resume">
+    <div class="rl">↩ Resume in a terminal${s.host?' · on '+esc(hostDisplay(s.host)):''}${s.project?' · '+esc(projDisplay(s.project))+' project':''}</div>
+    <code data-copy="${esc(cmd)}">${esc(cmd)}<span class="cp">⧉ copy</span></code>
+  </div>`;
+}
+// ---- answer-from-phone: reply box (only when the session is answerable AND a PIN gates the server) ----
+function updateReplyBar(s){
+  const can=!!(s&&s.answerable&&s.reply_enabled);
+  dreply.hidden=!can;
+  if(can&&!rtext.placeholder.startsWith('Reply'))rtext.placeholder='Reply to this session…';
+}
+function setRmsg(t,cls){rmsg.className=cls||'';rmsg.textContent=t||'';}
+function autosize(){rtext.style.height='auto';rtext.style.height=Math.min(120,rtext.scrollHeight)+'px';}
+async function sendReply(){
+  if(!openSid||rsend.disabled)return;
+  const text=rtext.value.trim(); if(!text){rtext.focus();return;}
+  rsend.disabled=true; setRmsg('sending…','');
+  try{
+    const r=await fetch('/reply',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id:openSid,text})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.ok){setRmsg('✓ delivered'+(d.target?' → '+d.target:''),'ok');rtext.value='';autosize();}
+    else{setRmsg('✗ '+esc(d.detail||d.reason||('error '+r.status)),'err');}
+  }catch(e){setRmsg('✗ '+esc(String(e)),'err');}
+  finally{rsend.disabled=false;}
+}
+rsend.onclick=sendReply;
+rtext.addEventListener('input',autosize);
+rtext.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendReply();}});
+async function pollAct(){
+  if(!openSid)return; renderDetailStats();
+  try{const r=await fetch('/activity?id='+encodeURIComponent(openSid)+'&n=40');const d=await r.json();renderStream(d);dlive.textContent='live';}
+  catch(e){dlive.textContent='⚠';dstream.innerHTML='<div class="muted" style="padding:20px">activity error: '+String(e).replace(/[<>&]/g,' ')+'</div>';}
+}
+function renderStream(d){
+  if(d.note){dstream.innerHTML='<div class="muted" style="padding:20px">'+esc(d.note)+'</div>';return;}
+  const items=d.items||[];
+  if(!items.length){dstream.innerHTML='<div class="muted" style="padding:20px">No recent activity.</div>';return;}
+  const atBottom=dstream.scrollHeight-dstream.scrollTop-dstream.clientHeight<60;
+  dstream.innerHTML=items.map(it=>{
+    const sub=it.side?' <span class="tag">sub</span>':'';
+    if(it.kind==='text')return `<div class="ai text">💬 ${esc(it.text)}${sub}</div>`;
+    if(it.kind==='ask'){
+      const opts=(it.options||[]).map((o,i)=>`<span class="opt">${i+1}. ${esc(o)}</span>`).join('');
+      return `<div class="ai ask">❓ ${esc(it.question)}${opts?'<div class="opts">'+opts+'</div>':''}${sub}</div>`;
+    }
+    if(it.kind==='thinking')return `<div class="ai think">🧠 ${esc(it.text)}${sub}</div>`;
+    if(it.kind==='tool')return `<div class="ai tool">🔧 <b>${esc(it.name)}</b> ${esc(it.summary)}${sub}</div>`;
+    if(it.kind==='result')return `<div class="ai res ${it.error?'err':''}">↳ ${esc(it.text)}${sub}</div>`;
+    return '';
+  }).join('');
+  if(atBottom)dstream.scrollTop=dstream.scrollHeight;
+}
+
+let es;
+function connect(){
+  es=new EventSource('/events');
+  es.onopen=()=>{dot.classList.add('on');ctext.textContent='live';};
+  es.onmessage=e=>{try{render(JSON.parse(e.data));}catch(_){}};
+  es.onerror=()=>{dot.classList.remove('on');ctext.textContent='reconnecting…';es.close();setTimeout(connect,2000);};
+}
+connect();
+// cost/burn history (Sprint 3): poll on load + every 30s; render() reads costData for the summary chips.
+pollCost(); setInterval(pollCost, 30000);
+// fleet reporting-health (P4): poll on load + every 15s (≈poll interval) so a broken watcher shows within minutes.
+pollHosts(); setInterval(pollHosts, 15000);
+// Craft Score (Phase 7): aggregate scan, so poll slowly — on load + every 60s.
+pollCraft(); setInterval(pollCraft, 60000);
+pollTrophy(); setInterval(pollTrophy, 60000);
+pollEfficiency(); setInterval(pollEfficiency, 60000);
+// 🧠 Coach (V8): off the live path — slow poll for the bundle + recent-session list (no narrative generated here).
+pollCoach(); setInterval(pollCoach, 60000);
+pollMcp(); setInterval(pollMcp, 60000);
+pollSearchMeta(); setInterval(pollSearchMeta, 60000);   // V9: capability/enabled probe (off the live path)
+pollMaint(); setInterval(pollMaint, 60000);             // V13: storage/maintenance stats (off the live path)
+pollAbout(); setInterval(pollAbout, 60000);             // ℹ️ About: version + runtime from /health (off the live path)
+pollUpdate(); setInterval(pollUpdate, 300000);          // V13: self-update banner (server polls the manifest)
+{ const st=document.getElementById('scene-trophy');   // calendar-heatmap metric toggle (delegated, attached once)
+  if(st)st.addEventListener('click',e=>{ const b=e.target.closest('[data-metric]'); if(!b)return;
+    trophyMetric=b.getAttribute('data-metric'); prefSet('trophy.metric',trophyMetric); renderTrophy(); }); }
+{ const se=document.getElementById('scene-efficiency');   // ROI "set plan price" buttons (delegated, attached once)
+  if(se)se.addEventListener('click',e=>{ const b=e.target.closest('[data-price]'); if(!b)return; setPlanPrice(b.getAttribute('data-price')); }); }
+// Dumb-zone v2 (Phase 7b): the data-derived drift curve changes slowly — fetch on load + every 5 min.
+fetchDrift(); setInterval(fetchDrift, 300000);
+
+// ============================================================================
+// Scene carousel + nav bar + hamburger menu + mute  (Phase 1 Foundation)
+// Self-contained: a registry of scenes (DOM panels in #track) the user swipes/keys/clicks between.
+// Adding a scene later = add an entry + its panel. Per-device prefs (mute, scene on/off) live in
+// localStorage. NB: every localStorage / window.addEventListener access is GUARDED — the node DOM-smoke
+// sandbox provides neither, and an unguarded access there throws at load (failing the smoke).
+// ============================================================================
+// (LS / prefGet / prefSet + the masking layer are defined earlier, near the top of the script.)
+
+// the scene registry. `el` = the panel's element id (already in the DOM, in this order).
+// 🧹 Maintenance scene (V13 Slice 5): storage health + encrypted export/import + checkpoint/prune/vacuum.
+// Screenshot-safe (sizes/counts only). Mutations are PIN-gated server-side; the user is already logged in,
+// so the cookie carries the auth — the only extra prompt is the export/import PASSPHRASE (not the login PIN).
+function fmtBytes(n){ n=n||0; if(n<1024)return n+' B'; const u=['KB','MB','GB','TB']; let i=-1; do{n/=1024;i++}while(n>=1024&&i<u.length-1); return n.toFixed(n<10?1:0)+' '+u[i]; }
+function maintRow(label,val){ return '<div class="mrow"><span>'+esc(label)+'</span><b>'+esc(val)+'</b></div>'; }
+function renderMaint(){
+  const sc=document.getElementById('scene-maint'); if(!sc)return;
+  const m=window._maint;
+  let h='<h2>🧹 Maintenance</h2>';
+  if(!m){ sc.innerHTML=h+'<div class="empty">Loading…</div>'; return; }
+  const st=m.stats||{};
+  const blk=(name,b)=>{ if(!b)return''; const s=b.sizes||{}; const rows=b.rows||{};
+    const tot=Object.values(rows).reduce((a,v)=>a+(v||0),0);
+    let r='<div class="foot" style="text-align:left;font-weight:700;margin-top:8px">'+esc(name)+'</div>';
+    r+=maintRow('Size (db + WAL)', fmtBytes(s.total));
+    r+=maintRow('Rows', tot.toLocaleString());
+    if(b.oldest_ts) r+=maintRow('Oldest data', coachAge(b.oldest_ts));
+    if(b.projected_bytes_per_year) r+=maintRow('~Growth / year', fmtBytes(b.projected_bytes_per_year));
+    return r; };
+  const ver=(window._update&&window._update.current)||'';
+  h+='<div class="lcard"><h3>💾 Storage</h3>'+blk('Usage DB (content-free)',st.usage)+blk('Content index',st.content)
+    +'<p class="foot" style="text-align:left;opacity:.6">Export dir: <code>'+esc(m.export_dir||'')+'</code> · runtime: '+esc(m.runtime||'')
+    +(ver?' · cc-observability v'+esc(ver):'')+'</p></div>';
+  h+='<div class="lcard"><h3>📦 Export / Import</h3>'
+    +'<p class="foot" style="text-align:left">A portable, <b>content-free</b> copy of your history (cost, events, rate limits, settings). '
+    +'<b>Encrypted before it’s written</b> — only ciphertext touches disk.</p>'
+    +'<button class="genbtn" data-maint-export>🔐 Export (encrypted)</button> '
+    +'<button class="linklike" data-maint-export-plain>plaintext (local only)</button>'
+    +(m.last_export?'<p class="foot" style="text-align:left">Last export: '+coachAge(m.last_export.ts)+' · '+fmtBytes(m.last_export.bytes)+' · <a class="ulink" href="/export?download=1">download ↓</a></p>':'')
+    +'<p class="foot" style="text-align:left;margin-top:10px"><button class="genbtn" data-maint-import>📥 Import…</button> <span style="opacity:.6">merge another machine’s export (idempotent; previews first)</span></p>'
+    +'<div id="maint-import-result"></div>'
+    +'<p class="foot" style="text-align:left;color:var(--amber)">⚠ Encrypt before sharing/uploading. <b>Store the passphrase in 1Password</b> — lose it and the file is unrecoverable.</p></div>';
+  h+='<div class="lcard"><h3>🧰 Maintenance</h3>'
+    +'<button class="genbtn" data-maint-checkpoint>💾 Checkpoint WAL</button> <span style="opacity:.6">lossless; bounds the -wal files</span>'
+    +'<p class="foot" style="text-align:left;margin-top:10px"><button class="genbtn" data-maint-prune>🧹 Prune…</button> <span style="opacity:.6">preview, then confirm (rate limits &gt;30d, orphaned content)</span></p>'
+    +'<div id="maint-prune-result"></div>'
+    +'<p class="foot" style="text-align:left;margin-top:10px"><button class="genbtn" data-maint-vacuum>♻ Vacuum / reclaim</button> <span style="opacity:.6">may take a few seconds; best on the host</span></p>'
+    +'<div id="maint-action-result"></div>'
+    +'<p class="foot" style="text-align:left;opacity:.6;margin-top:8px">Auto WAL-checkpoint runs in the background. Pruning &amp; vacuum are manual + previewed — nothing is deleted without your confirm. See docs/DATA_EXPORT.md.</p></div>';
+  sc.innerHTML=h;
+}
+async function pollMaint(){ try{const r=await fetch('/maintenance'); if(r.ok){window._maint=await r.json(); renderMaint();}}catch(_){} }
+// ℹ️ About scene: project identity, vendor-generic disclaimer, license, live version from /health.
+function renderAbout(){
+  const sc=document.getElementById('scene-about'); if(!sc)return;
+  const a=window._about;
+  let h='<h2>ℹ️ About</h2>';
+  if(!a){ sc.innerHTML=h+'<div class="empty">Loading…</div>'; return; }
+  h+='<div class="lcard"><p class="foot" style="text-align:left">cc-observability — a phone-glanceable Claude Code observability &amp; triage dashboard. Self-hosted, content-free, no third-party data egress.</p>'
+    +'<p class="foot" style="text-align:left"><b>Version '+esc(a.version||'')+'</b> · runtime: '+esc(a.runtime||'')+'</p></div>';
+  h+='<div class="lcard"><h3>⚖️ Disclaimer</h3>'
+    +'<p class="foot" style="text-align:left">Independent project — not affiliated with or endorsed by Anthropic, Google, or any AI vendor whose products it integrates. Product names &amp; trademarks (e.g. \'Claude\', \'Antigravity\') belong to their respective owners.</p></div>';
+  h+='<div class="lcard"><h3>📄 License</h3>'
+    +'<p class="foot" style="text-align:left">Licensed under the MIT License.</p></div>';
+  h+='<div class="lcard" style="text-align:center">'
+    +'<button class="genbtn" style="margin-top:0" data-terms-open>📜 Terms &amp; License</button>'
+    +'<p class="foot" style="text-align:left;margin-top:8px;opacity:.65">Full Terms of Use (draft) + MIT License text. No click-gate — browsewrap; use constitutes acceptance.</p></div>';
+  h+='<div class="lcard"><h3>📚 Docs (in the repo)</h3>'
+    +'<ul class="foot" style="text-align:left;padding-left:1.2em;margin:0">'
+    +'<li><code>docs/UPGRADE.md</code></li>'
+    +'<li><code>docs/DATA_EXPORT.md</code></li>'
+    +'<li><code>docs/CONTENT_PRIVACY.md</code></li>'
+    +'</ul></div>';
+  sc.innerHTML=h;
+}
+async function pollAbout(){ try{const r=await fetch('/health'); if(r.ok){window._about=await r.json(); renderAbout();}}catch(_){} }
+// V13 Slice 6: self-update banner (opt-in server-side check; never auto-applies; zero user data sent).
+function renderUpdate(){
+  const u=window._update, bar=document.getElementById('updatebar'); if(!bar)return;
+  if(u&&u.update_available&&!window._updateDismissed){
+    bar.style.display='flex';
+    bar.innerHTML='<span>🆕 cc-observability <b>'+esc(u.latest||'')+'</b> available (you have '+esc(u.current||'')
+      +') — run <code>'+esc(u.verb||'')+'</code></span><span class="x" data-update-dismiss role="button" tabindex="0">✕</span>';
+  } else { bar.style.display='none'; }
+}
+async function pollUpdate(){ try{const r=await fetch('/update'); if(r.ok){window._update=await r.json(); renderUpdate(); try{renderMaint();}catch(_){}}}catch(_){} }
+document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('[data-update-dismiss]')){ window._updateDismissed=true; renderUpdate(); }});
+document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('[data-terms-open]'))openTermsModal(); });
+function _maintMsg(id,ok,txt){ const el=document.getElementById(id); if(el)el.innerHTML='<p class="foot" style="text-align:left;color:'+(ok?'var(--green)':'var(--red)')+'">'+esc(txt)+'</p>'; }
+async function maintExport(encrypt){
+  let body;
+  if(encrypt){ const p=prompt('Passphrase to encrypt the export (save it in 1Password — lose it = unrecoverable):'); if(!p)return; body={passphrase:p}; }
+  else { if(!confirm('A plaintext export contains your history UNENCRYPTED. Keep it local only — never upload/share it. Continue?'))return; body={plaintext:true}; }
+  try{ const r=await fetch('/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const d=await r.json().catch(()=>({}));
+    _maintMsg('maint-action-result', !!d.ok, d.ok?('✓ Wrote '+(d.path||'')+' ('+fmtBytes(d.bytes)+')'):('Export failed: '+(d.detail||d.reason||'error'))); }
+  catch(_){ _maintMsg('maint-action-result',false,'Export failed.'); }
+  pollMaint();
+}
+async function maintImport(){
+  const dir=(window._maint&&window._maint.export_dir)||'';
+  const path=prompt('Path to an export file on this host:', dir?dir+'/':''); if(!path)return;
+  let pass=''; if(/\.enc$/.test(path)){ pass=prompt('Passphrase to decrypt:')||''; }
+  try{
+    const pr=await fetch('/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,passphrase:pass,dry:true})});
+    const pd=await pr.json().catch(()=>({}));
+    if(!pd.ok){ _maintMsg('maint-import-result',false,pd.detail||pd.reason||'import failed'); return; }
+    const add=Object.values(pd.tables||{}).reduce((a,v)=>a+(v.added||0),0);
+    if(!confirm('Preview: '+add+' new rows would be merged (existing rows skipped). Apply?')){ const el=document.getElementById('maint-import-result'); if(el)el.innerHTML=''; return; }
+    const r=await fetch('/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,passphrase:pass})});
+    const d=await r.json().catch(()=>({}));
+    const added=Object.values((d.tables)||{}).reduce((a,v)=>a+(v.added||0),0);
+    _maintMsg('maint-import-result', !!d.ok, d.ok?('✓ Merged '+added+' new rows.'):(d.detail||d.reason||'failed'));
+  }catch(_){ _maintMsg('maint-import-result',false,'Import failed.'); }
+  pollMaint();
+}
+async function maintCheckpoint(){ try{ const r=await fetch('/maintenance-checkpoint',{method:'POST'}); const d=await r.json().catch(()=>({})); _maintMsg('maint-action-result',!!d.ok,d.ok?'✓ Checkpointed (WAL truncated).':(d.detail||d.reason||'failed')); }catch(_){ _maintMsg('maint-action-result',false,'failed'); } pollMaint(); }
+async function maintPrune(){
+  const policy={rate_history_days:30, content_orphans:true};
+  try{
+    const pr=await fetch('/maintenance-prune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({policy,dry:true})});
+    const pd=await pr.json().catch(()=>({}));
+    if(!pd.ok){ _maintMsg('maint-prune-result',false,pd.detail||pd.reason||'prune failed'); return; }
+    const res=pd.result||{};
+    const lines=Object.entries(res).map(([k,v])=>k+': '+(v.rows!=null?v.rows+' rows':(v.docs!=null?v.docs+' docs':JSON.stringify(v)))).join(' · ');
+    const el=document.getElementById('maint-prune-result'); if(el)el.innerHTML='<p class="foot" style="text-align:left">Would remove → '+esc(lines||'nothing')+'</p>';
+    if(!confirm('Prune preview:\n'+(lines||'nothing')+'\n\nApply?'))return;
+    const r=await fetch('/maintenance-prune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({policy,dry:false})});
+    const d=await r.json().catch(()=>({})); _maintMsg('maint-prune-result',!!d.ok,d.ok?'✓ Pruned.':(d.detail||d.reason||'failed'));
+  }catch(_){ _maintMsg('maint-prune-result',false,'prune failed'); }
+  pollMaint();
+}
+async function maintVacuum(){ if(!confirm('Vacuum reclaims freed space; may take a few seconds. Continue?'))return;
+  try{ const r=await fetch('/maintenance-vacuum',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({which:'both'})}); const d=await r.json().catch(()=>({})); _maintMsg('maint-action-result',!!d.ok,d.ok?'✓ Vacuumed.':(d.detail||d.reason||'failed')); }catch(_){ _maintMsg('maint-action-result',false,'failed'); } pollMaint(); }
+(function(){ const sc=document.getElementById('scene-maint'); if(!sc)return;
+  sc.addEventListener('click',e=>{
+    if(e.target.closest('[data-maint-export]')){ maintExport(true); return; }
+    if(e.target.closest('[data-maint-export-plain]')){ maintExport(false); return; }
+    if(e.target.closest('[data-maint-import]')){ maintImport(); return; }
+    if(e.target.closest('[data-maint-checkpoint]')){ maintCheckpoint(); return; }
+    if(e.target.closest('[data-maint-prune]')){ maintPrune(); return; }
+    if(e.target.closest('[data-maint-vacuum]')){ maintVacuum(); return; }
+  });
+})();
+
+const SCENES=[
+  {id:'triage', title:'Triage', icon:'🎯',el:'app'},
+  {id:'cost',   title:'Cost',   icon:'💰',el:'scene-cost'},
+  {id:'history',title:'History', icon:'📈',el:'scene-history'},
+  {id:'trophy', title:'Trophy', icon:'🏆',el:'scene-trophy'},
+  {id:'craft',  title:'Craft',  icon:'🏅',el:'scene-craft'},
+  {id:'coach',  title:'Coach',  icon:'🧠',el:'scene-coach'},
+  {id:'efficiency',title:'Efficiency',icon:'💡',el:'scene-efficiency'},
+  {id:'mcp',    title:'MCP',    icon:'🧩',el:'scene-mcp'},
+  {id:'fleet',  title:'Fleet',  icon:'🖥️',el:'scene-fleet'},
+  {id:'archive',title:'Archive',icon:'🗂️',el:'scene-archive'},
+  {id:'search', title:'Search', icon:'🔍',el:'scene-search'},
+  {id:'maint',  title:'Maintenance', icon:'🧹',el:'scene-maint'},
+  {id:'about',  title:'About',  icon:'ℹ️',el:'scene-about'},
+  {id:'help',   title:'Help',   icon:'❓',el:'scene-help'},
+];
+// Triage is home (always on). Search is the lone OPT-IN scene (default OFF): it surfaces raw transcript
+// content, so a user must deliberately enable it in the menu. Every other scene defaults on.
+const sceneEnabled=s=>s.id==='triage'?true:prefGet('scene.'+s.id, s.id==='search'?false:true);
+const visibleScenes=()=>SCENES.filter(sceneEnabled);
+
+const carousel=document.getElementById('carousel'), track=document.getElementById('track'),
+      navbar=document.getElementById('navbar'), navlabel=document.getElementById('navlabel'),
+      navdots=document.getElementById('navdots'), apptitle=document.getElementById('apptitle'),
+      menu=document.getElementById('menu'), menubtn=document.getElementById('menubtn'),
+      mcphelp=document.getElementById('mcphelp'),
+      convo=document.getElementById('convo'),
+      menuscenes=document.getElementById('menuscenes'),
+      navmute=document.getElementById('navmute'), muteSw=document.getElementById('mute-sw');
+
+let sceneIdx=0;
+const sceneW=()=>(carousel&&carousel.clientWidth)|| (typeof window!=='undefined'&&window.innerWidth)||0;
+function applyVisibility(){ for(const s of SCENES){const el=document.getElementById(s.el); if(el)el.style.display=sceneEnabled(s)?'':'none';} }
+function goScene(i){
+  const vis=visibleScenes(); if(!vis.length)return;
+  sceneIdx=Math.max(0,Math.min(i,vis.length-1));
+  track.style.transform='translateX(-'+(sceneIdx*sceneW())+'px)';
+  updateNav();
+}
+function updateNav(){
+  const vis=visibleScenes(), cur=vis[sceneIdx]||vis[0]||SCENES[0];
+  if(navlabel)navlabel.textContent=(cur?cur.title:'')+(vis.length>1?' · '+(sceneIdx+1)+'/'+vis.length:'');
+  if(navdots)navdots.innerHTML=vis.map((s,i)=>'<i class="'+(i===sceneIdx?'on':'')+'" data-i="'+i+'"></i>').join('');
+  if(apptitle)apptitle.textContent=cur?('Claude Code · '+cur.title):'Claude Code';
+}
+
+// --- mute (gates the new-waiting beep + flash; see render()) ---
+let muted=prefGet('muted',false);
+function renderMute(){ if(navmute)navmute.textContent=muted?'🔕':'🔔'; if(muteSw)muteSw.classList.toggle('on',muted); }
+function toggleMute(){ muted=!muted; prefSet('muted',muted); renderMute(); }
+if(navmute)navmute.onclick=toggleMute; if(muteSw)muteSw.onclick=toggleMute; renderMute();
+
+// --- reveal real names (screenshot-safe masking; off by default, per-device) ---
+const revealSw=document.getElementById('reveal-sw');
+function renderReveal(){ if(revealSw)revealSw.classList.toggle('on',revealNames); }
+if(revealSw)revealSw.onclick=()=>{ setReveal(!revealNames); renderReveal(); };
+renderReveal();
+
+// --- nav bar buttons + dots ---
+const elClick=(id,fn)=>{const e=document.getElementById(id); if(e)e.onclick=fn;};
+elClick('navprev',()=>goScene(sceneIdx-1));
+elClick('navnext',()=>goScene(sceneIdx+1));
+elClick('navtoggle',()=>navbar&&navbar.classList.toggle('collapsed'));
+if(navdots)navdots.addEventListener('click',e=>{const d=e.target.closest('[data-i]'); if(d)goScene(+d.getAttribute('data-i'));});
+
+// --- hamburger menu ---
+function buildMenuScenes(){
+  if(!menuscenes)return;
+  menuscenes.innerHTML=SCENES.map(s=>{
+    const on=sceneEnabled(s), home=s.id==='triage';
+    return '<div class="mrow"><span class="ml">'+s.icon+' '+esc(s.title)+(home?' <span class="tag">home</span>':'')+'</span>'+
+      (home?'<span class="sw on" style="opacity:.45;pointer-events:none"></span>'
+           :'<span class="sw'+(on?' on':'')+'" data-scene="'+s.id+'"></span>')+'</div>';
+  }).join('');
+}
+// --- menu: session sort controls ---
+const menusort=document.getElementById('menusort'), workingSw=document.getElementById('working-sw');
+function buildMenuSort(){
+  if(!menusort)return;
+  menusort.innerHTML=SORTS.map(s=>`<div class="mrow" data-sort="${s.id}"><span class="ml">${s.id===sortMode?'◉':'○'} ${esc(s.label)}</span></div>`).join('');
+}
+function renderWorkingSw(){ if(workingSw)workingSw.classList.toggle('on',workingOnTop); }
+if(menusort)menusort.addEventListener('click',e=>{ const r=e.target.closest('[data-sort]'); if(!r)return;
+  sortMode=r.getAttribute('data-sort'); prefSet('sortMode',sortMode); buildMenuSort(); render(window._list||[]); });
+if(workingSw)workingSw.onclick=()=>{ workingOnTop=!workingOnTop; prefSet('workingOnTop',workingOnTop); renderWorkingSw(); render(window._list||[]); };
+renderWorkingSw();
+
+// --- menu: feature toggles ---
+const menufeat=document.getElementById('menufeat');
+function buildMenuFeatures(){
+  if(!menufeat)return;
+  menufeat.innerHTML=FEATURE_DEFS.map(f=>`<div class="mrow" data-feat="${f.k}"><span class="ml">${esc(f.label)}</span><span class="sw ${feat[f.k]?'on':''}"></span></div>`).join('');
+}
+if(menufeat)menufeat.addEventListener('click',e=>{ const r=e.target.closest('[data-feat]'); if(!r)return;
+  const k=r.getAttribute('data-feat'); setFeat(k,!feat[k]);
+  buildMenuFeatures(); render(window._list||[]); });
+
+// --- menu: per-account friendly rename (screenshot-safe; the email stays the internal key, never shown) ---
+const menuacct=document.getElementById('menuacct');
+function buildMenuAccounts(){
+  if(!menuacct)return;
+  const accts=accountsOf(window._list||[],window._cost);
+  menuacct.innerHTML=accts.length
+    ? accts.map(a=>`<div class="mrow" data-rename="${esc(a)}"><span class="ml">👤 ${esc(acctDisplay(a))}</span><span class="tag">rename</span></div>`).join('')
+    : '<div class="mrow soon"><span class="ml">No accounts detected yet</span></div>';
+}
+if(menuacct)menuacct.addEventListener('click',e=>{ const r=e.target.closest('[data-rename]'); if(!r)return;
+  if(typeof prompt!=='function')return;
+  const raw=r.getAttribute('data-rename'), cur=prefGet('name.account.'+raw,'')||'';
+  const v=prompt('Friendly name for this account (blank = reset to a neutral codename):',cur);
+  if(v===null)return; prefSet('name.account.'+raw, v.trim()||null);
+  buildMenuAccounts(); render(window._list||[]); renderCost(window._list||[]); renderAccounts(); });
+
+function openMenu(){ buildMenuScenes(); buildMenuSort(); renderWorkingSw(); buildMenuFeatures(); buildMenuAccounts(); if(menu)menu.hidden=false; }
+function closeMenu(){ if(menu)menu.hidden=true; }
+// 🧩 MCP help modal — body built on open (so the probe/auto-run commands carry the live dashboard URL).
+function openMcpHelp(){ const b=document.getElementById('mcphelpbody'); if(b)b.innerHTML=mcpHelpBody(); if(mcphelp)mcphelp.hidden=false; }
+function closeMcpHelp(){ if(mcphelp)mcphelp.hidden=true; }
+elClick('mcphelpclose',closeMcpHelp);
+if(mcphelp)mcphelp.addEventListener('click',e=>{
+  if(e.target===mcphelp){ closeMcpHelp(); return; }                 // backdrop click closes
+  const cp=e.target.closest('[data-copy]'); if(!cp)return;          // copy the probe cmd / auto-run prompt
+  copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
+    if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
+});
+// 📜 Terms & License modal — wired here (after elClick defined); body built on open
+const termsmodal=document.getElementById('termsmodal');
+elClick('termsmodalclose',closeTermsModal);
+if(termsmodal)termsmodal.addEventListener('click',e=>{ if(e.target===termsmodal)closeTermsModal(); });
+if(menubtn)menubtn.onclick=openMenu;
+elClick('menuclose',closeMenu);
+if(menu)menu.addEventListener('click',e=>{ if(e.target===menu)closeMenu(); });
+if(menuscenes)menuscenes.addEventListener('click',e=>{
+  const sw=e.target.closest('[data-scene]'); if(!sw)return;
+  const id=sw.getAttribute('data-scene');
+  prefSet('scene.'+id,!prefGet('scene.'+id,true));
+  applyVisibility(); buildMenuScenes();
+  const n=visibleScenes().length; if(sceneIdx>=n)goScene(n-1); else goScene(sceneIdx);
+});
+
+// --- touch swipe (suppressed while the drill-in overlay or menu is open) ---
+const swipeBlocked=()=>(detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden);
+let tsx=0,tsy=0,tdx=0,swiping=false;
+if(carousel){
+  carousel.addEventListener('touchstart',e=>{ if(swipeBlocked())return; const t=e.touches[0]; tsx=t.clientX;tsy=t.clientY;tdx=0;swiping=false; },{passive:true});
+  carousel.addEventListener('touchmove',e=>{ if(swipeBlocked())return; const t=e.touches[0],dx=t.clientX-tsx,dy=t.clientY-tsy;
+    if(!swiping){ if(Math.abs(dx)>8&&Math.abs(dx)>Math.abs(dy)*1.3){swiping=true;track.style.transition='none';} else if(Math.abs(dy)>10){return;} }
+    if(swiping){ tdx=dx; track.style.transform='translateX('+(-sceneIdx*sceneW()+dx)+'px)'; } },{passive:true});
+  carousel.addEventListener('touchend',()=>{ if(!swiping)return; track.style.transition='';
+    const th=Math.max(50,sceneW()*0.18);
+    if(tdx<=-th)goScene(sceneIdx+1); else if(tdx>=th)goScene(sceneIdx-1); else goScene(sceneIdx); swiping=false; },{passive:true});
+}
+
+// --- keyboard (← → between scenes; ESC closes menu/detail) — window events guarded for the smoke sandbox ---
+if(typeof window!=='undefined'&&window.addEventListener){
+  window.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){ if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(convo&&!convo.hidden){closeConvo();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
+    if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
+    if(e.key==='ArrowRight')goScene(sceneIdx+1);
+    else if(e.key==='ArrowLeft')goScene(sceneIdx-1);
+  });
+  window.addEventListener('resize',()=>goScene(sceneIdx));
+}
+
+applyVisibility(); goScene(0);   // start on Triage
+
+// auto-rotate scenes (wall-display mode; paused while the drill-in or menu is open)
+setInterval(()=>{ if(feat.autorotate&&detail&&detail.hidden&&menu&&menu.hidden&&(!mcphelp||mcphelp.hidden)&&(!convo||convo.hidden)&&(!termsmodal||termsmodal.hidden)){ const n=visibleScenes().length; if(n>1)goScene((sceneIdx+1)%n); } },12000);
+
+// keep awake: real Wake Lock (HTTPS) + NoSleep video fallback (HTTP), armed on first tap (also enables audio)
+let wakeLock=null;
+async function lock(){try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen');}catch(_){}}
+const awakeEl=document.getElementById('awake'), nsVideo=document.getElementById('nosleep');
+let armed=false;
+async function arm(){
+  lock();
+  try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();}catch(_){}
+  if(armed)return;
+  try{await nsVideo.play();armed=true;awakeEl.textContent='● screen kept awake';awakeEl.classList.add('on');}catch(_){}
+}
+['click','touchend'].forEach(ev=>document.addEventListener(ev,arm));
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){lock();if(armed)nsVideo.play().catch(()=>{});}});
+lock();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+</script>
+</body>
+</html>

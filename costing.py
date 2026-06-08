@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""
+cc-observability — cost engine (ccusage model, stdlib only)
+===========================================================
+Per-token USD pricing for Claude models, used to turn transcript `usage` objects into a
+dollar cost for HISTORY/aggregation (the live statusline feed gives `cost.total_cost_usd`
+directly; this is for sessions without it + per-project/day rollups).
+
+Four distinct rates per model — input / output / cache-creation / cache-read — because
+cache-create ≈ input×1.25 and cache-read ≈ input×0.1; pricing cache at the input rate is wrong.
+Numbers per published vendor rate cards.
+
+Model resolution: exact id → normalize (`.`/`@`→`-`, strip a trailing `-YYYYMMDD` date and any
+`[1m]` marker) → longest-prefix match. A `<synthetic>` / unknown / missing model costs $0.
+
+200k / long-context tiering: VERIFIED 2026-06-05 against platform.claude.com (models overview +
+migration guide) — NO current model has an above-200k premium. Opus 4.6/4.7/4.8 each price the full
+1M-token window at the flat standard rate ("1M context window at standard API pricing with no
+long-context premium"); Sonnet 4.6 ($3/$15) and Haiku 4.5 ($1/$5) are flat too, as are the listed
+legacy models. So the earlier "~5% low = unmodeled 1M above-200k tier" guess was WRONG — there is no
+tier to model. The `tiered()` machinery is retained ONLY in case a FUTURE/legacy model reintroduces a
+premium (it would carry `*_above` keys + `tier_at`); no entry below populates it, and none should
+without an authoritative above-200k number from the pricing page.
+"""
+import re
+
+# rate = USD per token. Optional tier: add input_above/cache_create_above/cache_read_above/output_above
+# + tier_at (token threshold) to price prompt tokens beyond the threshold at the higher rate.
+_R = lambda i, o, cc, cr: {"input": i, "output": o, "cache_create": cc, "cache_read": cr}
+
+# Canonical (already-normalized) model id → rates. Longest-prefix match handles dated/variant ids.
+PRICES = {
+    # Opus 4.5–4.8 (current pricing: $5 / $25 per M in/out)
+    "claude-opus-4-8": _R(5e-6, 25e-6, 6.25e-6, 0.5e-6),
+    "claude-opus-4-7": _R(5e-6, 25e-6, 6.25e-6, 0.5e-6),
+    "claude-opus-4-6": _R(5e-6, 25e-6, 6.25e-6, 0.5e-6),
+    "claude-opus-4-5": _R(5e-6, 25e-6, 6.25e-6, 0.5e-6),
+    # Legacy Opus 4 ($15 / $75 per M)
+    "claude-opus-4": _R(15e-6, 75e-6, 18.75e-6, 1.5e-6),
+    # Sonnet
+    "claude-sonnet-4-6": _R(3e-6, 15e-6, 3.75e-6, 0.3e-6),
+    "claude-sonnet-4": _R(3e-6, 15e-6, 3.75e-6, 0.3e-6),   # flat — no above-200k tier (verified 2026-06-05)
+    # Haiku
+    "claude-haiku-4-5": _R(1e-6, 5e-6, 1.25e-6, 0.1e-6),
+}
+
+_DATE_SUFFIX = re.compile(r"-\d{8}$")
+
+
+def normalize(model):
+    """exact id → comparable canonical form: lowercase, `.`/`@`→`-`, drop `[1m]`, strip a trailing date."""
+    if not model:
+        return ""
+    m = str(model).lower().strip()
+    m = m.replace("[1m]", "").replace("@", "-").replace(".", "-")
+    m = _DATE_SUFFIX.sub("", m)
+    return m
+
+
+def rate_for(model):
+    """Return the rate dict for a model id, or None if unknown/synthetic (→ $0)."""
+    m = normalize(model)
+    if not m or "synthetic" in m:
+        return None
+    if m in PRICES:
+        return PRICES[m]
+    # longest-prefix match (e.g. an unseen dated/variant id falls back to its family)
+    best = None
+    for key in PRICES:
+        if m.startswith(key) and (best is None or len(key) > len(best)):
+            best = key
+    return PRICES[best] if best else None
+
+
+def tiered(tokens, base, above, tier_at=200_000):
+    """Price `tokens` with a 200k tier: tokens up to tier_at at `base`, the rest at `above`."""
+    if tokens <= tier_at or above is None:
+        return tokens * base
+    return tier_at * base + (tokens - tier_at) * above
+
+
+def _priced(tokens, r, kind, prompt_tokens):
+    """Cost for one token bucket, applying the model's 200k tier if it defines one.
+    `prompt_tokens` (input+cache) is the size used to decide which side of the tier we're on."""
+    tokens = tokens or 0
+    base = r[kind]
+    above = r.get(kind + "_above")
+    if above is None:
+        return tokens * base
+    # tier on the total prompt size, not the bucket alone (ccusage tiers per request)
+    tier_at = r.get("tier_at", 200_000)
+    return tiered(tokens, base, above, tier_at) if prompt_tokens > tier_at else tokens * base
+
+
+def line_cost(usage, model):
+    """USD cost of one transcript `usage` object for `model`. Unknown/missing model → $0."""
+    r = rate_for(model)
+    if not r or not isinstance(usage, dict):
+        return 0.0
+    it = int(usage.get("input_tokens", 0) or 0)
+    cc = int(usage.get("cache_creation_input_tokens", 0) or 0)
+    cr = int(usage.get("cache_read_input_tokens", 0) or 0)
+    ot = int(usage.get("output_tokens", 0) or 0)
+    prompt = it + cc + cr
+    return (_priced(it, r, "input", prompt)
+            + _priced(cc, r, "cache_create", prompt)
+            + _priced(cr, r, "cache_read", prompt)
+            + _priced(ot, r, "output", prompt))
+
+
+def reprice(model, input_tokens=0, output_tokens=0, cache_read=0, cache_creation=0):
+    """Cost of a set of stored token counts under `model`'s rates (V11 what-if repricing). Pure arithmetic on
+    already-stored counts — no quality claim, just rate arbitrage. Unknown/synthetic model → $0."""
+    return line_cost({"input_tokens": input_tokens, "output_tokens": output_tokens,
+                      "cache_read_input_tokens": cache_read, "cache_creation_input_tokens": cache_creation}, model)
+
+
+if __name__ == "__main__":
+    # quick sanity: opus-4-8 line
+    u = {"input_tokens": 2, "cache_creation_input_tokens": 4287, "cache_read_input_tokens": 271700, "output_tokens": 415}
+    print("opus-4-8 line:", round(line_cost(u, "claude-opus-4-8"), 6), "USD")
+    print("dated id resolves:", rate_for("claude-opus-4-8-20260115") is not None)
+    print("synthetic -> $0:", line_cost(u, "<synthetic>"))

@@ -1,0 +1,14 @@
+{
+  "name": "cc-observability",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Claude Code session dashboard — dev tooling only (the app itself is stdlib Python + vanilla JS, no runtime deps).",
+  "scripts": {
+    "test:ui": "node tests/ui_smoke.js",
+    "test:e2e": "node tests/e2e_playwright.js",
+    "verify": "./verify.sh"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

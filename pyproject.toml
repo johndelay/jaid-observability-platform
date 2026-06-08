@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cc-observability"
+version = "0.13.0"          # keep in sync with version.py VERSION
+description = "Phone-glanceable Claude Code observability/triage dashboard — self-hosted, content-free, no third-party egress."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy", "cryptography"]
+
+[project.scripts]
+cc-observability = "server:main"
+
+# Flat layout: the app is a set of top-level modules + a web/ asset dir (found relative to server.py, or via
+# CC_WEB_DIR). The native install path is a git checkout + `pip install -e .` (editable keeps web/ in the
+# tree); the Claude-Code setup Skill automates that. `pip install .` works too — set CC_WEB_DIR to the web/
+# location if you install non-editable outside a checkout.
+[tool.setuptools]
+py-modules = [
+    "server", "watcher", "costing", "store", "craft", "medals", "coach",
+    "content_index", "version", "maintenance", "redact", "portable", "crypto",
+    "coach_worker", "responder", "tmux_inject", "mcp_probe",
+]

@@ -1,0 +1,4 @@
+# cc-observability runtime deps (native install). The Docker image installs these too.
+# Both ship musllinux + manylinux wheels → no compiler needed.
+numpy          # V9 semantic search nearest-neighbor scoring (optional feature; rides along unused if off)
+cryptography   # V13 encrypted exports (AES-256-GCM)

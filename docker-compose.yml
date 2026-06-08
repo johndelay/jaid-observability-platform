@@ -1,0 +1,50 @@
+# Run cc-observability on the host where Claude Code runs.
+# It reads that host's transcripts read-only and serves the dashboard on :8099.
+#
+#   cp .env.sample .env   # then set CC_HOST to this machine's name
+#   docker compose up -d --build
+#   open http://<this-host>:8099
+#
+# IMPORTANT: only ~/.claude/projects (transcripts) + ~/.cache/cc-dashboard (hook/statusline state)
+# are mounted — NOT all of ~/.claude (credentials). All mounts read-only.
+# Note: ~/.cache/cc-dashboard must exist before `up` (the hooks/statusline create it; or `mkdir -p` it).
+# To also surface Claude Desktop "Cowork" sessions on THIS host, add a mount:
+#   - "${HOME}/.config/Claude/local-agent-mode-sessions:/data/cowork:ro"
+#   and set CC_PROJECTS_DIRS=/data/projects,/data/cowork
+
+services:
+  cc-observability:
+    build: .
+    image: cc-observability:latest
+    container_name: cc-observability
+    ports:
+      - "${CC_PORT:-8099}:8099"
+      # V9 transcript search serves RAW content — published to host loopback ONLY (not the LAN), so it is
+      # reachable solely from a browser on this machine (open http://localhost:8100). This loopback bind IS
+      # the content firewall. Exposing it on the LAN is a deliberate firewall break — don't, without reason.
+      - "127.0.0.1:${CC_CONTENT_PORT:-8100}:${CC_CONTENT_PORT:-8100}"
+    volumes:
+      - "${CC_PROJECTS_DIR:-${HOME}/.claude/projects}:/data/projects:ro"
+      - "${CC_STATE_DIR_HOST:-${HOME}/.cache/cc-dashboard}:/data/state:ro"
+      - "${CC_DB_DIR:-${HOME}/.cache/cc-observability}:/data/db"   # rw — usage/cost history DB (SQLite)
+      # rw — export bundles land here (encrypted by default). User-accessible on the host + SyncThing-carryable.
+      - "${CC_EXPORT_DIR_HOST:-${HOME}/cc-observability-exports}:/data/exports"
+    environment:
+      - TZ=${TZ:-UTC}                         # set to your zone (e.g. America/Chicago) so cost "today"/daily roll over at local midnight
+      - CC_HOST=${CC_HOST:-claude-host}
+      - CC_ACCOUNT=${CC_ACCOUNT:-}            # optional: tag this host's sessions by Claude account (else auto-detect via the status.json hook)
+      - CC_DB_PATH=/data/db/cc-usage.db
+      - CC_CONTENT_PORT=${CC_CONTENT_PORT:-8100}
+      - CC_CONTENT_DB_PATH=/data/db/cc-content.db   # V9 search index — isolated from the content-free usage DB; opt-in, deletable
+      - CC_EXPORT_DIR=/data/exports                 # V13: export bundles (content-free; encrypted before write)
+      # V9 semantic search (optional): set CC_EMBED_MODEL to a pulled Ollama embed model (e.g. nomic-embed-text)
+      # to enable meaning-based search. Blank = semantic OFF (keyword search still works). Ollama is the user's
+      # OWN local model (LAN/host) → no third-party egress. extra_hosts lets the container reach the host's Ollama.
+      - CC_EMBED_MODEL=${CC_EMBED_MODEL:-}
+      - CC_OLLAMA_URL=${CC_OLLAMA_URL:-http://host.docker.internal:11434}
+      - CC_WINDOW_1M_MODELS=${CC_WINDOW_1M_MODELS:-claude-opus-4-8}
+      - CC_ACCESS_PIN=${CC_ACCESS_PIN:-}      # set to require a PIN for the UI (unset = open on LAN)
+      - CC_INGEST_TOKEN=${CC_INGEST_TOKEN:-}  # set to require X-CC-Token on /ingest from remote watchers
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # so the container can reach the host's Ollama on Linux
+    restart: unless-stopped

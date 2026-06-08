@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+logs/
+*.log
+.env
+
+# node / playwright dev tooling (the app itself has no runtime deps)
+node_modules/
+tests/artifacts/
+.claude/settings.local.json

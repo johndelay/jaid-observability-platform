@@ -1,0 +1,15 @@
+[Unit]
+Description=cc-observability collector + web dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/git/jaid-observability-platform
+Environment=CC_PORT=8099
+Environment=CC_WINDOW_1M_MODELS=claude-opus-4-8
+ExecStart=/usr/bin/python3 %h/git/jaid-observability-platform/server.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
