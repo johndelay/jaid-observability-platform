@@ -2496,7 +2496,7 @@ function renderUpdate(){
   const u=window._update, bar=document.getElementById('updatebar'); if(!bar)return;
   if(u&&u.update_available&&!window._updateDismissed){
     bar.style.display='flex';
-    bar.innerHTML='<span>🆕 cc-observability <b>'+esc(u.latest||'')+'</b> available (you have '+esc(u.current||'')
+    bar.innerHTML='<span>🆕 JAID Observability Platform <b>'+esc(u.latest||'')+'</b> available (you have '+esc(u.current||'')
       +') — run <code>'+esc(u.verb||'')+'</code></span><span class="x" data-update-dismiss role="button" tabindex="0">✕</span>';
   } else { bar.style.display='none'; }
 }
