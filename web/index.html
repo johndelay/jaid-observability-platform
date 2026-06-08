@@ -934,18 +934,14 @@ function _sgTick(){
 function _sgAuto(){ if(_sgTimer){try{clearInterval(_sgTimer);}catch(_){}} try{_sgTimer=setInterval(_sgTick,20000);}catch(_){} }
 function _sgArticleList(){ return (_sgFetched&&_sgFetched.length)?_sgFetched:SUGGESTIONS; }
 function _sgItems(list){
-  // optionally prepend a live tip if any session is in the dumb zone
-  const tip=feat.dumbzone&&window._list&&window._list.some(s=>['drift','danger','auto'].includes(zone(s).key))
-    ? [{kind:'tip', title:'🧠 A session is deep in context', blurb:'Consider /compact for a clean checkpoint.', url:null, tags:[]}]
-    : [];
-  return [...tip, ...list];
+  // Articles-only card. A live dumb-zone tip ("🧠 A session is deep in context") used to be prepended here,
+  // but it read as a fake "first article". Deep-context sessions are already surfaced by the gauges + statusline.
+  return list;
 }
 function renderSuggestCard(){
   const items=_sgItems(_sgArticleList()); if(!items.length)return '';
   const idx=_sgIdx%items.length; const it=items[idx];
-  const tag=it.kind==='tip'
-    ? `<span class="sg-tag">💡 tip</span>`
-    : `<span class="sg-tag">📖 From the blog</span>`;
+  const tag=`<span class="sg-tag">📖 From the blog</span>`;
   const readLink=it.url
     ? `<a class="sg-read" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">Read →</a>`
     : '';
