@@ -658,9 +658,34 @@ check('svgHeatmap renders a colored grid + calendarCells lays out a year', () =>
   if (typeof ctx.calendarCells !== 'function') throw new Error('calendarCells() not defined');
   const hm = ctx.svgHeatmap([{ x: 0, y: 0, value: 5, tip: 'a' }, { x: 1, y: 2, value: 0, tip: 'b' }], { cols: 2, rows: 3 });
   if (!hm.includes('<svg') || !hm.includes('<rect')) throw new Error('no svg/rect output');
+  // a cell with a key → clickable rect (hcell + data-k); keyless cell stays static
+  const hk = ctx.svgHeatmap([{ x: 0, y: 0, value: 5, key: '2026-06-06' }, { x: 1, y: 0, value: 0 }], { cols: 2, rows: 1 });
+  if (!/class="hcell" data-k="2026-06-06"/.test(hk)) throw new Error('keyed cell should render a clickable hcell rect');
+  if ((hk.match(/data-k=/g) || []).length !== 1) throw new Error('only the keyed cell should be clickable');
   const cal = ctx.calendarCells([{ day: '2026-06-06', cost_usd: 3, messages: 9, tokens: 100 }], 'messages');
   if (cal.cols < 50 || cal.cols > 54) throw new Error('expected ~53 week columns, got ' + cal.cols);
   if (!cal.cells.length || cal.cells.some(c => c.y < 0 || c.y > 6)) throw new Error('calendar rows must be 0..6 (day-of-week)');
+  // active days get a clickable key; empty days do not
+  const activeCell = cal.cells.find(c => c.value > 0);
+  if (!activeCell || activeCell.key !== '2026-06-06') throw new Error('active day must carry a clickable key');
+  if (cal.cells.some(c => !c.value && c.key)) throw new Error('empty days must not be clickable (no key)');
+});
+
+// 9l2c) day-click popup (Trophy calendar): per-day "interesting stats" built client-side from /report
+check('dayStatsBody builds per-day stats with rank / best-ever from the report payload', () => {
+  if (typeof ctx.dayStatsBody !== 'function') throw new Error('dayStatsBody() not defined');
+  win._report = { enabled: true,
+    all_time: { cost_usd: 100, messages: 1000, tokens: 50000 },
+    daily: [ { day: '2026-06-06', cost_usd: 9, messages: 200, tokens: 9000 },   // the busiest day
+             { day: '2026-06-05', cost_usd: 1, messages: 20, tokens: 500 },
+             { day: '2026-06-04', cost_usd: 3, messages: 60, tokens: 2000 } ] };
+  const b = ctx.dayStatsBody('2026-06-06');
+  if (!/Spend/.test(b) || !/Messages/.test(b) || !/Tokens/.test(b)) throw new Error('day popup missing the three metrics');
+  if (!/#1 of 3 active days/.test(b)) throw new Error('rank among active days missing/wrong');
+  if (!/best ever/.test(b)) throw new Error('the top day should be flagged best-ever');
+  if (!/of all-time/.test(b)) throw new Error('share-of-all-time missing');
+  if (ctx.dayStatsBody('1999-01-01').indexOf('No data') < 0) throw new Error('unknown day → graceful "No data"');
+  win._report = null;
 });
 
 // 9l3) Trophy Room honest empty state must not throw

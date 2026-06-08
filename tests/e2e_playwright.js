@@ -256,6 +256,27 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     await page.evaluate(() => window.goScene && window.goScene(0)); // back to Triage for the screenshot
   });
 
+  await check('Trophy calendar: clicking an active day square opens the day-stats popup', async () => {
+    await page.evaluate(() => window.goScene && window.goScene(3));   // Trophy
+    await page.waitForFunction(() => {
+      const tr = document.getElementById('scene-trophy');
+      return tr && /Trophy Room/.test(tr.innerHTML) && !/Loading trophy/.test(tr.innerHTML);
+    }, undefined, { timeout: 4000, polling: 100 });
+    const hasCell = await page.evaluate(() => !!document.querySelector('#scene-trophy rect.hcell'));
+    if (!hasCell) { console.log('    (skip: no active calendar days in this host\'s report)'); }
+    else {
+      await page.evaluate(() => document.querySelector('#scene-trophy rect.hcell').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+      await page.waitForFunction(() => {
+        const dp = document.getElementById('daypop');
+        return dp && !dp.hidden && /Spend|Messages|Tokens/.test(document.getElementById('daypopbody').innerHTML);
+      }, undefined, { timeout: 3000, polling: 100 });
+      // Esc closes it again
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.getElementById('daypop').hidden, undefined, { timeout: 2000, polling: 100 });
+    }
+    await page.evaluate(() => window.goScene && window.goScene(0));
+  });
+
   await check('🔍 Search scene: the content firewall walls raw content on the LAN port', async () => {
     // Search is opt-in OFF (not in the carousel by default), but the scene element exists. Probing the LIVE
     // :8099 (the LAN port) must report local:false → the UI renders the local-only wall, never content.

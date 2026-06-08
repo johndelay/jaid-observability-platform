@@ -304,6 +304,16 @@
   .hmbtn{font:inherit;font-size:10px;font-weight:700;letter-spacing:.2px;padding:2px 7px;border-radius:999px;
     border:1px solid var(--line);background:var(--card2);color:var(--muted);cursor:pointer}
   .hmbtn.on{background:var(--accent);color:#06121a;border-color:var(--accent)}
+  /* clickable calendar day squares: yellow outline on hover signals "tap for that day's stats" */
+  rect.hcell{cursor:pointer}
+  rect.hcell:hover{stroke:#ffe14d;stroke-width:1.6px;paint-order:stroke}
+  /* day-stats popup body */
+  .daygrid{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .dayrow{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--card2)}
+  .dayrow .dl{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  .dayrow .dv{float:right;font-weight:800;font-variant-numeric:tabular-nums}
+  .dayrow .dx{display:block;margin-top:3px;font-size:12px;color:var(--muted)}
+  .dayrow .best{color:#ffe14d;font-weight:700}
   .mxleg{float:right;display:inline-flex;gap:8px;font-size:10px;font-weight:600;color:var(--muted)}
   .mxk{display:inline-flex;align-items:center;gap:3px}
   .mxk i{width:9px;height:9px;border-radius:2px;display:inline-block}
@@ -612,6 +622,12 @@
   <div class="modalpanel">
     <div class="modalhead"><h3>📐 See your real MCP token usage</h3><button id="ctxhelpclose" class="modalclose">✕</button></div>
     <div id="ctxhelpbody"></div>
+  </div>
+</div>
+<div id="daypop" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3 id="daypoptitle">Day</h3><button id="daypopclose" class="modalclose">✕</button></div>
+    <div id="daypopbody"></div>
   </div>
 </div>
 <div id="convo" class="modal" hidden>
@@ -1204,7 +1220,11 @@ function svgHeatmap(cells,opts){
   const max=opts.max||Math.max(1,...cells.map(c=>c.value||0));
   const lvl=v=>!v?0:(v/max>0.75?4:v/max>0.5?3:v/max>0.25?2:1);
   const w=cols*(cs+gap), h=rows*(cs+gap);
-  const rects=cells.map(c=>`<rect x="${(c.x*(cs+gap)).toFixed(1)}" y="${(c.y*(cs+gap)).toFixed(1)}" width="${cs}" height="${cs}" rx="2" fill="${HEAT[lvl(c.value||0)]}"><title>${esc(c.tip||'')}</title></rect>`).join('');
+  // a cell with a `key` becomes clickable (class hcell + data-k) → callers wire a popup; keyless cells are static
+  const rects=cells.map(c=>{
+    const click=c.key?` class="hcell" data-k="${esc(c.key)}"`:'';
+    return `<rect${click} x="${(c.x*(cs+gap)).toFixed(1)}" y="${(c.y*(cs+gap)).toFixed(1)}" width="${cs}" height="${cs}" rx="2" fill="${HEAT[lvl(c.value||0)]}"><title>${esc(c.tip||'')}</title></rect>`;
+  }).join('');
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="xMinYMin meet" style="display:block;margin-top:6px;max-width:100%;height:auto">${rects}</svg>`;
 }
 // build a GitHub-style year calendar from daily rows → {cells, cols}. Days are LOCAL (match the store's
@@ -1219,7 +1239,8 @@ function calendarCells(daily,metric){
   for(let dt=new Date(start); dt<=today; dt.setDate(dt.getDate()+1), i++){
     const iso=fmtDay(dt), d=byDay[iso], v=d?val(d):0;
     const lbl=metric==='messages'?(v+' msgs'):metric==='tokens'?(fmtTok(v)+' tokens'):usd(v);
-    cells.push({x:Math.floor(i/7), y:dt.getDay(), value:v, tip:iso+': '+(v?lbl:'no activity')});
+    cells.push({x:Math.floor(i/7), y:dt.getDay(), value:v, key:v?iso:null,
+      tip:iso+': '+(v?lbl+' — tap for stats':'no activity')});
   }
   return {cells, cols:Math.floor((i-1)/7)+1};
 }
@@ -1312,7 +1333,7 @@ function renderTrophy(){
     const btns=['cost','messages','tokens'].map(m=>`<button class="hmbtn${m===trophyMetric?' on':''}" data-metric="${m}">${mlabel[m]}</button>`).join('');
     h+=`<div class="lcard"><h3>Activity · last year<span class="hmtoggle">${btns}</span></h3>
       ${svgHeatmap(cells,{cols,rows:7,cell:11,gap:2})}
-      <p class="foot" style="text-align:left;padding-top:6px">One square per day — darker = more ${mlabel[trophyMetric]}. Hover a square for the date.</p></div>`;
+      <p class="foot" style="text-align:left;padding-top:6px">One square per day — darker = more ${mlabel[trophyMetric]}. <b>Tap an active day</b> (yellow outline on hover) for that day's stats.</p></div>`;
   }
   // time-of-day / day-of-week rhythm grid (Slice 4): full 24×7 matrix of message activity, reuses svgHeatmap
   const hourly=r.hourly||[];
@@ -1365,6 +1386,42 @@ function renderTrophy(){
   }
   sc.innerHTML=h;
 }
+// Trophy calendar day-click → "interesting stats" for one day, computed client-side from the /report payload
+// already in hand (r.daily = per-day cost/msgs/tokens, r.all_time = lifetime). No new endpoint; screenshot-safe.
+const _MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const _WDFULL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function _dayTitle(iso){ const p=String(iso).split('-'), dt=new Date(+p[0],+p[1]-1,+p[2]);
+  return '📅 '+_WDFULL[dt.getDay()]+', '+_MON[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear(); }
+function dayStatsBody(iso){
+  const r=window._report||{}, daily=r.daily||[], at=r.all_time||{};
+  const d=daily.find(x=>x.day===iso);
+  if(!d) return '<div class="empty">No data for that day.</div>';
+  const active=daily.filter(x=>(x.cost_usd||0)||(x.messages||0)||(x.tokens||0)), n=active.length||1;
+  const METR=[
+    {label:'Spend',    get:x=>x.cost_usd||0, fmt:usd,    all:at.cost_usd||0},
+    {label:'Messages', get:x=>x.messages||0, fmt:fmt,    all:at.messages||0},
+    {label:'Tokens',   get:x=>x.tokens||0,   fmt:fmtTok, all:at.tokens||0},
+  ];
+  let h='<div class="daygrid">';
+  for(const m of METR){
+    const v=m.get(d); let dx;
+    if(!v){ dx='no activity in this metric'; }
+    else{
+      const sorted=active.map(m.get).sort((a,b)=>b-a);
+      const rank=sorted.indexOf(v)+1, avg=sorted.reduce((a,b)=>a+b,0)/n, best=v>=sorted[0];
+      const share=m.all?Math.round(v/m.all*100):0, t=trend(v,avg);
+      dx=`#${rank} of ${n} active days · ${t.html} vs your avg · ${share}% of all-time`+(best?' · <span class="best">🏆 best ever</span>':'');
+    }
+    h+=`<div class="dayrow"><span class="dl">${m.label}</span><span class="dv">${m.fmt(v)}</span><span class="dx">${dx}</span></div>`;
+  }
+  h+='</div>';
+  const tpm=d.messages?(d.tokens||0)/d.messages:0;
+  h+=`<p class="foot" style="text-align:left;padding-top:8px">${d.messages?'~'+fmtTok(Math.round(tpm))+' tokens/message that day · ':''}ranks are among your ${n} active days. Costs are estimates, computed locally.</p>`;
+  return h;
+}
+function openDayPop(iso){ const t=document.getElementById('daypoptitle'), b=document.getElementById('daypopbody');
+  if(t)t.textContent=_dayTitle(iso); if(b)b.innerHTML=dayStatsBody(iso); if(daypop)daypop.hidden=false; }
+function closeDayPop(){ if(daypop)daypop.hidden=true; }
 async function pollTrophy(){try{const r=await fetch('/report');if(r.ok){window._report=await r.json();renderTrophy();}}catch(_){}}
 
 // ---- Craft Score scene (Phase 7): a rate-normalized, honor-system score for skilled+responsible use ----
@@ -2329,8 +2386,10 @@ pollSearchMeta(); setInterval(pollSearchMeta, 60000);   // V9: capability/enable
 pollMaint(); setInterval(pollMaint, 60000);             // V13: storage/maintenance stats (off the live path)
 pollAbout(); setInterval(pollAbout, 60000);             // ℹ️ About: version + runtime from /health (off the live path)
 pollUpdate(); setInterval(pollUpdate, 300000);          // V13: self-update banner (server polls the manifest)
-{ const st=document.getElementById('scene-trophy');   // calendar-heatmap metric toggle (delegated, attached once)
-  if(st)st.addEventListener('click',e=>{ const b=e.target.closest('[data-metric]'); if(!b)return;
+{ const st=document.getElementById('scene-trophy');   // calendar day-click + heatmap metric toggle (delegated, once)
+  if(st)st.addEventListener('click',e=>{
+    const dk=e.target.closest('[data-k]'); if(dk){ openDayPop(dk.getAttribute('data-k')); return; }   // tap a day square
+    const b=e.target.closest('[data-metric]'); if(!b)return;
     trophyMetric=b.getAttribute('data-metric'); prefSet('trophy.metric',trophyMetric); renderTrophy(); }); }
 { const se=document.getElementById('scene-efficiency');   // ROI "set plan price" buttons (delegated, attached once)
   if(se)se.addEventListener('click',e=>{ const b=e.target.closest('[data-price]'); if(!b)return; setPlanPrice(b.getAttribute('data-price')); }); }
@@ -2508,6 +2567,7 @@ const carousel=document.getElementById('carousel'), track=document.getElementByI
       menu=document.getElementById('menu'), menubtn=document.getElementById('menubtn'),
       mcphelp=document.getElementById('mcphelp'),
       ctxhelp=document.getElementById('ctxhelp'),
+      daypop=document.getElementById('daypop'),
       convo=document.getElementById('convo'),
       menuscenes=document.getElementById('menuscenes'),
       navmute=document.getElementById('navmute'), muteSw=document.getElementById('mute-sw');
@@ -2616,6 +2676,9 @@ if(ctxhelp)ctxhelp.addEventListener('click',e=>{
   copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
     if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
 });
+// Trophy day-stats popup close/backdrop (wired after the element grab so `daypop` is initialized)
+elClick('daypopclose',closeDayPop);
+if(daypop)daypop.addEventListener('click',e=>{ if(e.target===daypop)closeDayPop(); });
 // 📜 Terms & License modal — wired here (after elClick defined); body built on open
 const termsmodal=document.getElementById('termsmodal');
 elClick('termsmodalclose',closeTermsModal);
@@ -2647,7 +2710,7 @@ if(carousel){
 // --- keyboard (← → between scenes; ESC closes menu/detail) — window events guarded for the smoke sandbox ---
 if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){ if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
+    if(e.key==='Escape'){ if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
     if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
     if(e.key==='ArrowRight')goScene(sceneIdx+1);
     else if(e.key==='ArrowLeft')goScene(sceneIdx-1);
