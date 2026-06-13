@@ -724,6 +724,33 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(pol["trivial_haiku"]["turns"], 2)      # short opus + small sonnet
         self.assertTrue(all(pol[k]["saved_usd"] > 0 for k in pol))   # every downgrade saves (cheaper rates)
 
+    def test_model_savings_breakdown_by_project_and_session(self):
+        # the short-Opus→Sonnet opportunity grouped by project + session (the "where to right-size" view)
+        now = time.time()
+        def row(mid, proj, sess, out, model="claude-opus-4-8", side=0):
+            return {"message_id": mid, "request_id": mid, "session_id": sess, "project": proj, "ts": now,
+                    "model": model, "input_tokens": 1_000_000, "output_tokens": out,
+                    "cache_read": 0, "cache_creation": 0, "is_sidechain": side}
+        self.s.record_many([
+            row("a", "projA", "s1", 50),                 # short opus → counts (projA/s1)
+            row("b", "projA", "s1", 80),                 # short opus → counts (projA/s1 again)
+            row("c", "projB", "s2", 40),                 # short opus → counts (projB/s2)
+            row("d", "projA", "s3", 2000),               # long opus → excluded (not low-output)
+            row("e", "projB", "s2", 30, model="claude-sonnet-4-6"),  # not opus → excluded
+            row("f", "projA", "s1", 60, side=1),         # sidechain → excluded
+        ])
+        bd = self.s.model_savings_breakdown(days=30)
+        self.assertTrue(bd["estimate"] and bd["policy"] == "short_opus_sonnet")
+        by_p = {x["project"]: x for x in bd["by_project"]}
+        self.assertEqual(set(by_p), {"projA", "projB"})
+        self.assertEqual(by_p["projA"]["turns"], 2)             # rows a,b only (c is projB, d/e/f excluded)
+        self.assertEqual(by_p["projB"]["turns"], 1)             # row c only
+        self.assertEqual(bd["by_project"][0]["project"], "projA")  # sorted by saved_usd desc (projA bigger)
+        by_s = {x["session_id"]: x for x in bd["by_session"]}
+        self.assertEqual(by_s["s1"]["turns"], 2)
+        self.assertEqual(by_s["s1"]["project"], "projA")
+        self.assertTrue(all(x["saved_usd"] > 0 for x in bd["by_project"]))
+
     def test_plan_prices_roundtrip_and_clear(self):
         # V11 Slice 2: per-account monthly plan price stored as one JSON meta blob; ≤0/None/blank clears
         self.assertEqual(self.s.get_plan_prices(), {})

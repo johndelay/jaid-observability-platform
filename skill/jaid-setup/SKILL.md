@@ -1,9 +1,9 @@
 ---
-name: cc-observability-setup
+name: jaid-setup
 description: Install and run the cc-observability dashboard NATIVELY (no Docker) on this machine, driven by Claude Code. Detects the OS, sets up a Python venv, seeds config with a generated PIN, installs a per-OS background service (systemd --user / launchd / Task Scheduler), starts it, and verifies /health. Use when the user asks to "install cc-observability", "set up the Claude Code dashboard", "run the dashboard without Docker", or to add a new machine to their fleet. For an always-on homelab server, prefer the Docker path in the README instead.
 ---
 
-# cc-observability — native setup
+# JAID native setup (the cc-observability dashboard)
 
 You are installing the **cc-observability dashboard** on THIS machine, natively (no Docker). The audience runs
 Claude Code, so you do the per-OS wiring by reasoning about the host. The app is self-hosted, content-free, and

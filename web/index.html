@@ -1699,6 +1699,24 @@ function renderEfficiency(){
   } else {
     h+=`<div class="lcard"><div class="foot" style="text-align:center">No downgrade opportunities in the last ${sv.days||30} days — your model mix already looks right-sized. 👍</div></div>`;
   }
+  // — WHERE to right-size: the defensible short-Opus→Sonnet opportunity grouped by project + recent session —
+  const bd=e.savings_breakdown||{}, bp=(bd.by_project||[]).filter(x=>x.saved_usd>0), bs=(bd.by_session||[]).filter(x=>x.saved_usd>0);
+  if(bp.length||bs.length){
+    h+='<div class="lcard"><h3>Where to right-size · last '+(bd.days||30)+'d</h3>';
+    h+='<p class="foot" style="text-align:left;margin:0 0 6px">The <b>short Opus → Sonnet</b> opportunity (low-output Opus turns) by <b>where</b> it lands — the spots worth defaulting to a smaller model.</p>';
+    if(bp.length){
+      const mx=Math.max(1,...bp.map(x=>x.saved_usd||0));
+      h+='<div class="foot" style="text-align:left;font-weight:700;margin-top:4px">By project</div>';
+      h+=bp.map(x=>{const pct=Math.round(((x.saved_usd||0)/mx)*100);
+        return `<div class="hbar"><span class="hl">${esc(projDisplay(x.project))}</span><span class="ht"><i style="width:${pct}%"></i></span><span class="hv">~${usd(x.saved_usd)} · ${x.turns}t</span></div>`;}).join('');
+    }
+    if(bs.length){
+      h+='<div class="foot" style="text-align:left;font-weight:700;margin-top:8px">By session</div>';
+      h+=bs.map(x=>{const ago=x.last_ts?rel(Date.now()/1000-x.last_ts):'';
+        return `<div class="roirow"><span class="hl">${esc(projDisplay(x.project))} <span class="muted">${esc(String(x.session_id).slice(0,6))}</span></span><span class="rv">~${usd(x.saved_usd)} · ${x.turns}t${ago?' · '+ago:''}</span></div>`;}).join('');
+    }
+    h+='<p class="foot" style="text-align:left;padding-top:6px">Same opportunities-not-judgments estimate, just grouped — quality isn’t observable, so this is "where low-output Opus turns cluster," not "where you wasted money."</p></div>';
+  }
   // — subscription ROI (Slice 2): API-equivalent value vs your plan price; set the price per account via /pref —
   const roi=e.roi||[];
   if(roi.length){

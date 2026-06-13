@@ -658,6 +658,37 @@ class Store:
                     for k, v in pol.items()]
         return {"policies": policies, "considered": considered, "days": days, "estimate": True}
 
+    def model_savings_breakdown(self, days=30, short_output=600, top=5):
+        """WHERE the 'short Opus → Sonnet' opportunity (model_savings' defensible low-output proxy) concentrates
+        — per PROJECT and per SESSION — so coaching can point at a specific place ("default this project to
+        Sonnet") instead of one fleet total. Same rate-arbitrage estimate; content-free; estimate:True."""
+        conds, args = ["COALESCE(is_sidechain,0)=0"], []
+        if days:
+            conds.append("ts>=?"); args.append(time.time() - days * 86400)
+        proj, sess = {}, {}
+        for r in self._all(
+                "SELECT project, session_id, COALESCE(ts,0) ts, model, COALESCE(input_tokens,0) it, "
+                "COALESCE(output_tokens,0) ot, COALESCE(cache_read,0) cr, COALESCE(cache_creation,0) cc "
+                "FROM usage WHERE " + " AND ".join(conds), tuple(args)):
+            if model_family(r["model"]) != "opus" or r["ot"] >= short_output:
+                continue
+            toks = dict(input_tokens=r["it"], output_tokens=r["ot"], cache_read=r["cr"], cache_creation=r["cc"])
+            s = costing.reprice(r["model"], **toks) - costing.reprice("claude-sonnet-4-6", **toks)
+            if s <= 0:
+                continue
+            p = r["project"] or "(unknown)"
+            d = proj.setdefault(p, {"saved": 0.0, "turns": 0}); d["saved"] += s; d["turns"] += 1
+            sid = r["session_id"] or "(unknown)"
+            e = sess.setdefault(sid, {"saved": 0.0, "turns": 0, "project": p, "last_ts": 0.0})
+            e["saved"] += s; e["turns"] += 1; e["last_ts"] = max(e["last_ts"], r["ts"])
+        by_project = sorted(({"project": k, "saved_usd": round(v["saved"], 2), "turns": v["turns"]}
+                             for k, v in proj.items()), key=lambda x: -x["saved_usd"])[:top]
+        by_session = sorted(({"session_id": k, "project": v["project"], "saved_usd": round(v["saved"], 2),
+                              "turns": v["turns"], "last_ts": v["last_ts"]}
+                             for k, v in sess.items()), key=lambda x: -x["saved_usd"])[:top]
+        return {"policy": "short_opus_sonnet", "by_project": by_project, "by_session": by_session,
+                "days": days, "estimate": True}
+
     def reducible_spend(self, days=30):
         """V11 Slice 4 (speculative): spend that *may* be reducible — NOT a 'wasted' figure. The one defensible
         number is pure arithmetic: sum cost_usd of non-sidechain turns whose context_tokens sat in each dumb-zone

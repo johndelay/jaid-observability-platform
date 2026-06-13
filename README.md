@@ -44,7 +44,7 @@ the collector auto-escalates to 1M once a session exceeds 200k.
 Pick by what you're running:
 
 - **New user, your own laptop → native, driven by Claude Code.** In Claude Code, run the
-  **`cc-observability-setup`** skill (`skill/cc-observability-setup/`). It detects your OS, makes a venv
+  **`jaid-setup`** skill (`skill/jaid-setup/`). It detects your OS, makes a venv
   (`pip install -e .` → numpy + cryptography), seeds `.env` with a generated PIN, installs a per-OS
   background service (systemd --user / launchd / Task Scheduler), starts it, and verifies `/health`.
   Native runs as you, so it needs no sidecars and binds the raw-content search port straight to `127.0.0.1`.
@@ -76,7 +76,7 @@ docker compose up -d --build
 
 ## Run it (native, no Docker)
 
-The `cc-observability-setup` skill automates this, but by hand:
+The `jaid-setup` skill automates this, but by hand:
 
 ```bash
 python3 -m venv .venv && ./.venv/bin/pip install -e .   # numpy + cryptography
