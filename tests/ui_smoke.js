@@ -623,6 +623,23 @@ check('renderEfficiency: savings opportunities + honesty framing + empty states'
   win._eff = null; ctx.renderEfficiency();   // null payload must be safe
 });
 
+// 9l2d2) Efficiency "Where to right-size" card — per-project + per-session breakdown of the short-Opus opportunity
+check('renderEfficiency: savings_breakdown renders by-project + by-session "where to right-size"', () => {
+  win._eff = { enabled: true, estimate: true,
+    savings: { days: 30, considered: 50, policies: [{ id: 'short_opus_sonnet', label: 'Short Opus turns → Sonnet', saved_usd: 9.0, turns: 30 }] },
+    savings_breakdown: { policy: 'short_opus_sonnet', days: 30,
+      by_project: [{ project: 'bigproj', saved_usd: 7.0, turns: 22 }, { project: 'smallproj', saved_usd: 2.0, turns: 8 }],
+      by_session: [{ session_id: 'abc123def', project: 'bigproj', saved_usd: 4.5, turns: 14, last_ts: 1717000000 }] } };
+  ctx.renderEfficiency();
+  const out = document.getElementById('scene-efficiency').innerHTML;
+  if (!out.includes('Where to right-size')) throw new Error('breakdown card title missing');
+  if (!out.includes('By project') || !out.includes('By session')) throw new Error('breakdown sub-sections missing');
+  if (!out.includes('$7')) throw new Error('top-project saved figure missing');
+  if (out.includes('abc123def')) throw new Error('full session_id should be truncated, not echoed whole');
+  if (!/where low-output Opus turns cluster/.test(out)) throw new Error('breakdown honesty caveat missing');
+  win._eff = null;
+});
+
 // 9l2e) Efficiency ROI card (V11 Slice 2): API-equiv value vs plan price; set-price button when unset
 check('renderEfficiency: subscription ROI — multiple when priced, set-price button when not', () => {
   win._eff = { enabled: true, estimate: true,

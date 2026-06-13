@@ -41,10 +41,14 @@ data* — no server, no egress, no setup required.
    - `efficiency` (V11) — `savings.policies[]`: each a what-if model-downgrade (`all_opus_sonnet`,
      `short_opus_sonnet`, `trivial_haiku`) with `saved_usd` + `turns` over the last 30 days — **estimated $
      you might save** by right-sizing, pure repricing of the same tokens (an *opportunity*, never a claim
-     those turns would've been as good cheaper). `roi[]` (dashboard only): per-account API-equivalent value
+     those turns would've been as good cheaper). `savings_breakdown` (dashboard only) — **WHERE** the
+     defensible `short_opus_sonnet` opportunity concentrates: `by_project[]` (`project`, `saved_usd`, `turns`)
+     and `by_session[]` (`session_id`, `project`, `saved_usd`, `turns`, `last_ts`), top 5 each. Use it to give
+     a *specific, actionable* tip ("your biggest right-sizing spot is project X — try defaulting it to Sonnet")
+     instead of one fleet total. `roi[]` (dashboard only): per-account API-equivalent value
      vs the plan price (`multiple` = ×) — only present once a plan price is set. `caps[]` (dashboard only):
      per-account 5h/7d plan-cap `avg`/`peak`/`cap_hits` from rate history. In `standalone` mode only
-     `savings` is populated (a `note` says so).
+     `savings` is populated (a `note` says so — the breakdown needs the dashboard's stored history).
    - `drift` (dashboard only) — measured tool-error rate per context band + a `knee_band` (where errors
      measurably rise). `knee_band: null` means **no upward knee in the real data** — say that honestly
      rather than inventing a threshold.
@@ -62,7 +66,10 @@ data* — no server, no egress, no setup required.
      "You're 2 manual compacts from the next Context Surgeon tier." · **Efficiency (V11):** "~$X/30d of your
      short, low-output Opus turns *look* downgradeable to Sonnet — worth trying Sonnet for quick edits"
      (lead with `short_opus_sonnet`, the defensible policy; treat `all_opus_sonnet` as the aggressive
-     ceiling, not a recommendation). If `roi` is present: "you got ~$Y of API-equivalent value from your $X
+     ceiling, not a recommendation). **When `savings_breakdown` is present, get specific:** "most of that is in
+     **`<by_project[0].project>`** (~$Y across N short-Opus turns) — consider defaulting that project to Sonnet
+     (e.g. set the model in its CLAUDE.md)"; you may name the user's own project/session here — it's their own
+     local data and the *where* is the actionable part (still keep accounts neutral). If `roi` is present: "you got ~$Y of API-equivalent value from your $X
      plan (≈Z×) — solid leverage." If `caps` show low peaks: "you've got plenty of cap headroom."
    - **Medal nudge**: name the closest-to-earning medal and the exact gap.
    - If `source == "standalone"`, mention once that running the cc-observability dashboard unlocks richer

@@ -852,7 +852,9 @@ class Handler(BaseHTTPRequestHandler):
                 if cu:
                     caps.append({"account": a, "windows": cu})
             self._send_json({"enabled": True, "estimate": True,
-                             "savings": _store.model_savings(days=30), "roi": roi, "caps": caps,
+                             "savings": _store.model_savings(days=30),
+                             "savings_breakdown": _store.model_savings_breakdown(days=30),
+                             "roi": roi, "caps": caps,
                              "reducible": _store.reducible_spend(days=30)})
         except Exception as e:  # noqa: BLE001
             self._send_json({"enabled": True, "error": str(e)})
