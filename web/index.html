@@ -303,6 +303,13 @@
     word-break:break-word;line-height:1.5;color:var(--txt);cursor:pointer;user-select:all}
   code.hcmd .cp{position:absolute;top:6px;right:6px;font-size:10px;font-weight:700;color:var(--muted);
     background:var(--card);border:1px solid var(--line);border-radius:6px;padding:2px 7px;user-select:none}
+  /* ❓ Help modal — accent links + action buttons */
+  #helpmodalbody a{color:var(--accent);font-weight:700;text-decoration:none}
+  #helpmodalbody a:hover{text-decoration:underline}
+  #helpmodalbody .hlinks{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+  #helpmodalbody .hbtn{display:inline-block;background:var(--card2);border:1px solid var(--line);
+    border-radius:8px;padding:8px 12px;color:var(--txt)!important;font-weight:700;font-size:12px;text-decoration:none}
+  #helpmodalbody .hbtn:hover{border-color:var(--accent);text-decoration:none}
   /* the ? help affordance on the 🧩 scene header */
   .mcphead{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .helpq{flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--card2);
@@ -629,6 +636,9 @@
 
     <div class="msect">Account names</div>
     <div id="menuacct"></div>
+
+    <div class="msect">Help &amp; support</div>
+    <div class="mrow" data-help-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">❓ Help &amp; troubleshooting</span><span class="tag">open</span></div>
   </div>
 </div>
 <div id="mcphelp" class="modal" hidden>
@@ -659,6 +669,12 @@
   <div class="modalpanel">
     <div class="modalhead"><h3>📜 Terms &amp; License</h3><button id="termsmodalclose" class="modalclose">✕</button></div>
     <div id="termsbody"></div>
+  </div>
+</div>
+<div id="helpmodal" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3>❓ Help &amp; troubleshooting</h3><button id="helpmodalclose" class="modalclose">✕</button></div>
+    <div id="helpmodalbody"></div>
   </div>
 </div>
 <div id="detail" class="overlay" hidden>
@@ -899,6 +915,42 @@ function waited(s){
 let prevNeeds=new Set(), first=true, actx=null;
 function beep(){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();const o=actx.createOscillator(),g=actx.createGain();o.connect(g);g.connect(actx.destination);o.type='sine';o.frequency.value=880;g.gain.value=0.06;o.start();o.stop(actx.currentTime+0.25);}catch(_){}}
 function flash(){document.body.classList.add('alarm');setTimeout(()=>document.body.classList.remove('alarm'),1500);}
+
+// public project repo (used by the ❓ Help modal; opening a link is ordinary browsing — sends no data)
+const REPO_URL='https://github.com/johndelay/jaid-observability-platform';
+
+// ---- ❓ Help & troubleshooting modal (opened from the hamburger menu) ----
+// Short "I'm stuck" entry point — points at your own Claude + the GitHub repo. The full metric
+// glossary lives in the ❓ Help scene and version/license in the ℹ️ About scene (not duplicated here).
+function helpModalBody(){
+  const ver=(window._about&&window._about.version)?(' · you’re on v'+esc(window._about.version)):'';
+  const tprompt=[
+    "I'm running the JAID Observability Platform — a self-hosted Claude Code dashboard "
+      +"(repo: github.com/johndelay/jaid-observability-platform). Something isn't working right: "
+      +"<describe what's wrong, or paste the error>.",
+    "",
+    "Please help me troubleshoot it. You can read the container logs (docker compose logs), my .env "
+      +"(without echoing any secrets), and the repo's README + docs/ for guidance. Start by checking the "
+      +"container health and the most recent logs."
+  ].join('\n');
+  return ''
+    +`<p>Two fast ways to get unstuck${ver}:</p>`
+    +`<h4>1 · Ask your own Claude</h4>`
+    +`<p>You’re already running Claude Code — it’s the best troubleshooter for this app because it can actually `
+      +`see your setup (logs, <code>.env</code>, the repo). Describe what’s off, or paste the error, and let it dig in.</p>`
+    +`<code class="hcmd" data-copy="${esc(tprompt)}">${esc(tprompt)}<span class="cp">⧉ copy</span></code>`
+    +`<h4>2 · Docs &amp; issues on GitHub</h4>`
+    +`<p>Setup, upgrade, privacy and troubleshooting docs live in the repo. Hit a bug or want a feature? Open an issue.</p>`
+    +`<p><a href="${esc(REPO_URL)}" target="_blank" rel="noopener noreferrer">${esc(REPO_URL.replace('https://',''))} ↗</a></p>`
+    +`<div class="hlinks">`
+      +`<a class="hbtn" href="${esc(REPO_URL+'#readme')}" target="_blank" rel="noopener noreferrer">📚 Browse docs</a>`
+      +`<a class="hbtn" href="${esc(REPO_URL+'/issues')}" target="_blank" rel="noopener noreferrer">🐛 Report a bug ↗</a>`
+    +`</div>`
+    +`<p class="note">Both keep the app’s no-egress promise: Claude runs locally on your machine, and the GitHub `
+      +`link is just public docs — opening it sends none of your data.</p>`
+    +`<p class="foot" style="text-align:left">Wondering what a number means? See the <b>❓ Help</b> scene. `
+      +`Version &amp; license? See <b>ℹ️ About</b>.</p>`;
+}
 
 // ---- Suggestions / Reading card ----
 // public gist URL for the hosted article list (opt-in fetch only — ZERO egress when checkbox is off)
@@ -2619,6 +2671,7 @@ const carousel=document.getElementById('carousel'), track=document.getElementByI
       navdots=document.getElementById('navdots'), apptitle=document.getElementById('apptitle'),
       menu=document.getElementById('menu'), menubtn=document.getElementById('menubtn'),
       mcphelp=document.getElementById('mcphelp'),
+      helpmodal=document.getElementById('helpmodal'),
       ctxhelp=document.getElementById('ctxhelp'),
       daypop=document.getElementById('daypop'),
       convo=document.getElementById('convo'),
@@ -2720,6 +2773,16 @@ if(mcphelp)mcphelp.addEventListener('click',e=>{
   copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
     if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
 });
+// ❓ Help & troubleshooting modal — body built on open (carries the live version from /health)
+function openHelpModal(){ const b=document.getElementById('helpmodalbody'); if(b)b.innerHTML=helpModalBody(); if(helpmodal)helpmodal.hidden=false; }
+function closeHelpModal(){ if(helpmodal)helpmodal.hidden=true; }
+elClick('helpmodalclose',closeHelpModal);
+if(helpmodal)helpmodal.addEventListener('click',e=>{
+  if(e.target===helpmodal){ closeHelpModal(); return; }              // backdrop click closes
+  const cp=e.target.closest('[data-copy]'); if(!cp)return;           // copy the troubleshooting prompt (links pass through)
+  copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
+    if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
+});
 function openCtxHelp(){ const b=document.getElementById('ctxhelpbody'); if(b)b.innerHTML=ctxHelpBody(); if(ctxhelp)ctxhelp.hidden=false; }
 function closeCtxHelp(){ if(ctxhelp)ctxhelp.hidden=true; }
 elClick('ctxhelpclose',closeCtxHelp);
@@ -2738,7 +2801,10 @@ elClick('termsmodalclose',closeTermsModal);
 if(termsmodal)termsmodal.addEventListener('click',e=>{ if(e.target===termsmodal)closeTermsModal(); });
 if(menubtn)menubtn.onclick=openMenu;
 elClick('menuclose',closeMenu);
-if(menu)menu.addEventListener('click',e=>{ if(e.target===menu)closeMenu(); });
+if(menu)menu.addEventListener('click',e=>{
+  if(e.target.closest&&e.target.closest('[data-help-open]')){ closeMenu(); openHelpModal(); return; }
+  if(e.target===menu)closeMenu();
+});
 if(menuscenes)menuscenes.addEventListener('click',e=>{
   const sw=e.target.closest('[data-scene]'); if(!sw)return;
   const id=sw.getAttribute('data-scene');
@@ -2748,7 +2814,7 @@ if(menuscenes)menuscenes.addEventListener('click',e=>{
 });
 
 // --- touch swipe (suppressed while the drill-in overlay or menu is open) ---
-const swipeBlocked=()=>(detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden);
+const swipeBlocked=()=>(detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(helpmodal&&!helpmodal.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden);
 let tsx=0,tsy=0,tdx=0,swiping=false;
 if(carousel){
   carousel.addEventListener('touchstart',e=>{ if(swipeBlocked())return; const t=e.touches[0]; tsx=t.clientX;tsy=t.clientY;tdx=0;swiping=false; },{passive:true});
@@ -2763,8 +2829,8 @@ if(carousel){
 // --- keyboard (← → between scenes; ESC closes menu/detail) — window events guarded for the smoke sandbox ---
 if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){ if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
-    if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
+    if(e.key==='Escape'){ if(helpmodal&&!helpmodal.hidden){closeHelpModal();return;} if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
+    if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(helpmodal&&!helpmodal.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
     if(e.key==='ArrowRight')goScene(sceneIdx+1);
     else if(e.key==='ArrowLeft')goScene(sceneIdx-1);
   });
@@ -2774,7 +2840,7 @@ if(typeof window!=='undefined'&&window.addEventListener){
 applyVisibility(); goScene(0);   // start on Triage
 
 // auto-rotate scenes (wall-display mode; paused while the drill-in or menu is open)
-setInterval(()=>{ if(feat.autorotate&&detail&&detail.hidden&&menu&&menu.hidden&&(!mcphelp||mcphelp.hidden)&&(!convo||convo.hidden)&&(!termsmodal||termsmodal.hidden)){ const n=visibleScenes().length; if(n>1)goScene((sceneIdx+1)%n); } },12000);
+setInterval(()=>{ if(feat.autorotate&&detail&&detail.hidden&&menu&&menu.hidden&&(!mcphelp||mcphelp.hidden)&&(!helpmodal||helpmodal.hidden)&&(!convo||convo.hidden)&&(!termsmodal||termsmodal.hidden)){ const n=visibleScenes().length; if(n>1)goScene((sceneIdx+1)%n); } },12000);
 
 // keep awake: real Wake Lock (HTTPS) + NoSleep video fallback (HTTP), armed on first tap (also enables audio)
 let wakeLock=null;
