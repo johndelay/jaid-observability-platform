@@ -1113,9 +1113,9 @@ function _wireSuggest(){
 }
 // Terms & License modal content (verbatim from TERMS_DRAFT.md + repo LICENSE)
 function _termsBody(){
-  const terms=`cc-observability — Terms of Use (DRAFT)
+  const terms=`JAID Observability Platform — Terms of Use (DRAFT)
 
-Effective date: [DATE]  ·  Software: cc-observability ("the Software")  ·  Author: John DeLay ("the Author")
+Effective date: [DATE]  ·  Software: JAID Observability Platform (cc-observability) ("the Software")  ·  Author: John DeLay ("the Author")
 
 1. Acceptance
 By installing, running, or using the Software, you agree to these Terms of Use and to the MIT License that accompanies the Software. If you do not agree, do not install or use the Software.
@@ -2190,8 +2190,8 @@ function mcpHelpBody(){
   const url=location.origin;
   const probe='CC_URL='+url+' CC_INGEST_TOKEN=<your-ingest-token> python3 mcp_probe.py';
   const autorun=[
-    'Set up my MCP server list to sync automatically to my cc-observability dashboard.','',
-    'There is a script, mcp_probe.py, in my cc-observability repo. It runs claude mcp list, keeps ONLY each '
+    'Set up my MCP server list to sync automatically to my JAID dashboard.','',
+    'There is a script, mcp_probe.py, in my JAID Observability Platform repo. It runs claude mcp list, keeps ONLY each '
       +'server name and its connection status (it strips every command, URL and token), and POSTs that to the '
       +'dashboard. No secrets are sent and nothing leaves my network.','',
     'Please make it run automatically on THIS machine. Detect my OS and use the native scheduler:',
@@ -2201,7 +2201,7 @@ function mcpHelpBody(){
     'When it runs it needs two values in the environment:',
     '  CC_URL='+url,
     '  CC_INGEST_TOKEN=<the dashboard ingest token, the SAME token the watcher uses>','',
-    'Read CC_INGEST_TOKEN from my cc-observability .env (or a secrets manager). Do NOT hardcode it into a '
+    'Read CC_INGEST_TOKEN from my JAID Observability Platform .env (or a secrets manager). Do NOT hardcode it into a '
       +'world-readable script or plist, and keep it out of logs and shell history.','',
     'If it is easy, also add a Claude Code SessionStart hook that runs the same command, so the list refreshes '
       +'whenever I start a session.','',
@@ -2610,7 +2610,7 @@ function renderMaint(){
   const ver=(window._update&&window._update.current)||'';
   h+='<div class="lcard"><h3>💾 Storage</h3>'+blk('Usage DB (content-free)',st.usage)+blk('Content index',st.content)
     +'<p class="foot" style="text-align:left;opacity:.6">Export dir: <code>'+esc(m.export_dir||'')+'</code> · runtime: '+esc(m.runtime||'')
-    +(ver?' · cc-observability v'+esc(ver):'')+'</p></div>';
+    +(ver?' · JAID v'+esc(ver):'')+'</p></div>';
   h+='<div class="lcard"><h3>📦 Export / Import</h3>'
     +'<p class="foot" style="text-align:left">A portable, <b>content-free</b> copy of your history (cost, events, rate limits, settings). '
     +'<b>Encrypted before it’s written</b> — only ciphertext touches disk.</p>'
@@ -2636,7 +2636,7 @@ function renderAbout(){
   const a=window._about;
   let h='<h2>ℹ️ About</h2>';
   if(!a){ sc.innerHTML=h+'<div class="empty">Loading…</div>'; return; }
-  h+='<div class="lcard"><p class="foot" style="text-align:left">cc-observability — a phone-glanceable Claude Code observability &amp; triage dashboard. Self-hosted, content-free, no third-party data egress.</p>'
+  h+='<div class="lcard"><p class="foot" style="text-align:left">JAID Observability Platform — a phone-glanceable Claude Code observability &amp; triage dashboard. Self-hosted, content-free, no third-party data egress.</p>'
     +'<p class="foot" style="text-align:left"><b>Version '+esc(a.version||'')+'</b> · runtime: '+esc(a.runtime||'')+'</p></div>';
   h+='<div class="lcard"><h3>⚖️ Disclaimer</h3>'
     +'<p class="foot" style="text-align:left">Independent project — not affiliated with or endorsed by Anthropic, Google, or any AI vendor whose products it integrates. Product names &amp; trademarks (e.g. \'Claude\', \'Antigravity\') belong to their respective owners.</p></div>';

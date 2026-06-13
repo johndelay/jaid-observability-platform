@@ -1,6 +1,6 @@
 # Content-index privacy
 
-Everything in cc-observability is content-free (token counts + timestamps) **except one opt-in feature:
+Everything in JAID Observability Platform is content-free (token counts + timestamps) **except one opt-in feature:
 transcript search** (`cc-content.db`). That index holds the **raw text** of your sessions — your prose, file
 dumps, and command output — which can include secrets that scrolled past (a token in a `cat .env`, an API
 response). This doc is how we keep that risk bounded, and what you can turn up if you want more.
