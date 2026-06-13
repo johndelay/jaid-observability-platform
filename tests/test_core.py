@@ -773,6 +773,27 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(by_s["s1"]["project"], "projA")
         self.assertTrue(all(x["saved_usd"] > 0 for x in bd["by_project"]))
 
+    def test_savings_counts_fable_premium_tier(self):
+        # Fable ($10/$50) is pricier than Opus, so short low-output Fable turns are ALSO a Sonnet-downgrade
+        # opportunity — the savings logic must not gate on Opus alone.
+        now = time.time()
+        def row(mid, proj, out, model):
+            return {"message_id": mid, "request_id": mid, "session_id": "s", "project": proj, "ts": now,
+                    "model": model, "input_tokens": 1_000_000, "output_tokens": out,
+                    "cache_read": 0, "cache_creation": 0, "is_sidechain": 0}
+        self.s.record_many([
+            row("f1", "projF", 40, "claude-fable-5"),     # short Fable → must count toward Sonnet downgrade
+            row("o1", "projO", 40, "claude-opus-4-8"),    # short Opus → counts (as before)
+            row("h1", "projH", 40, "claude-haiku-4-5"),   # Haiku → never a downgrade candidate
+        ])
+        ms = self.s.model_savings(days=30)
+        pol = {p["id"]: p for p in ms["policies"]}
+        self.assertEqual(pol["short_opus_sonnet"]["turns"], 2)   # Fable + Opus, NOT Haiku
+        bd = self.s.model_savings_breakdown(days=30)
+        projs = {x["project"] for x in bd["by_project"]}
+        self.assertIn("projF", projs)                            # Fable opportunity surfaces by project
+        self.assertNotIn("projH", projs)                         # Haiku does not
+
     def test_plan_prices_roundtrip_and_clear(self):
         # V11 Slice 2: per-account monthly plan price stored as one JSON meta blob; ≤0/None/blank clears
         self.assertEqual(self.s.get_plan_prices(), {})

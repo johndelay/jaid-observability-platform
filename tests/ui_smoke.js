@@ -637,6 +637,10 @@ check('renderEfficiency: savings_breakdown renders by-project + by-session "wher
   if (!out.includes('$7')) throw new Error('top-project saved figure missing');
   if (out.includes('abc123def')) throw new Error('full session_id should be truncated, not echoed whole');
   if (!/where low-output Opus turns cluster/.test(out)) throw new Error('breakdown honesty caveat missing');
+  // deterministic plain-English recommendation (no AI) — names the top project + the takeaway
+  if (!/💡 Recommendation/.test(out)) throw new Error('recommendation card missing');
+  if (!/right-sizing opportunity is in/.test(out)) throw new Error('recommendation text missing');
+  if (!/not a judgment/.test(out)) throw new Error('recommendation honesty caveat missing');
   win._eff = null;
 });
 

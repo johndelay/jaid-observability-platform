@@ -47,6 +47,11 @@ def model_family(model):
     """Coarse model family for the mix chart: opus | sonnet | haiku | fable | mythos | other.
     Single source of truth = costing.family_of (so pricing + the mix chart agree on families)."""
     return costing.family_of(model) or "other"
+
+
+# Right-sizing tiers for the what-if downgrade analysis (by family, cheapest-target-aware):
+_PREMIUM = ("opus", "fable", "mythos")               # pricier than Sonnet → candidates to downgrade → Sonnet
+_ABOVE_HAIKU = ("opus", "sonnet", "fable", "mythos")  # pricier than Haiku → candidates (if trivial) → Haiku
 # Must be WRITABLE. In Docker the transcript/state mounts are read-only, so the compose sets
 # CC_DB_PATH to a dedicated rw volume; outside Docker we default under ~/.cache.
 DEFAULT_PATH = os.environ.get("CC_DB_PATH") or os.path.expanduser("~/.cache/cc-observability/cc-usage.db")
@@ -629,8 +634,8 @@ class Store:
         conds, args = ["COALESCE(is_sidechain,0)=0"], []
         if days:
             conds.append("ts>=?"); args.append(time.time() - days * 86400)
-        pol = {"all_opus_sonnet": {"label": "All Opus → Sonnet", "saved": 0.0, "turns": 0},
-               "short_opus_sonnet": {"label": "Short Opus turns → Sonnet", "saved": 0.0, "turns": 0},
+        pol = {"all_opus_sonnet": {"label": "All Opus/Fable → Sonnet", "saved": 0.0, "turns": 0},
+               "short_opus_sonnet": {"label": "Short Opus/Fable turns → Sonnet", "saved": 0.0, "turns": 0},
                "trivial_haiku": {"label": "Trivial turns → Haiku", "saved": 0.0, "turns": 0}}
         considered = 0
         for r in self._all(
@@ -641,13 +646,13 @@ class Store:
             fam = model_family(r["model"])
             toks = dict(input_tokens=r["it"], output_tokens=r["ot"], cache_read=r["cr"], cache_creation=r["cc"])
             actual = costing.reprice(r["model"], **toks)
-            if fam == "opus":
+            if fam in _PREMIUM:   # Opus / Fable / Mythos — all pricier than Sonnet
                 s = actual - costing.reprice("claude-sonnet-4-6", **toks)
                 if s > 0:
                     pol["all_opus_sonnet"]["saved"] += s; pol["all_opus_sonnet"]["turns"] += 1
                     if r["ot"] < short_output:
                         pol["short_opus_sonnet"]["saved"] += s; pol["short_opus_sonnet"]["turns"] += 1
-            if fam in ("opus", "sonnet") and r["ot"] < trivial_output:
+            if fam in _ABOVE_HAIKU and r["ot"] < trivial_output:
                 s = actual - costing.reprice("claude-haiku-4-5", **toks)
                 if s > 0:
                     pol["trivial_haiku"]["saved"] += s; pol["trivial_haiku"]["turns"] += 1
@@ -656,9 +661,9 @@ class Store:
         return {"policies": policies, "considered": considered, "days": days, "estimate": True}
 
     def model_savings_breakdown(self, days=30, short_output=600, top=5):
-        """WHERE the 'short Opus → Sonnet' opportunity (model_savings' defensible low-output proxy) concentrates
-        — per PROJECT and per SESSION — so coaching can point at a specific place ("default this project to
-        Sonnet") instead of one fleet total. Same rate-arbitrage estimate; content-free; estimate:True."""
+        """WHERE the 'short Opus/Fable → Sonnet' opportunity (model_savings' defensible low-output proxy)
+        concentrates — per PROJECT and per SESSION — so coaching can point at a specific place ("default this
+        project to Sonnet") instead of one fleet total. Same rate-arbitrage estimate; content-free; estimate:True."""
         conds, args = ["COALESCE(is_sidechain,0)=0"], []
         if days:
             conds.append("ts>=?"); args.append(time.time() - days * 86400)
@@ -667,7 +672,7 @@ class Store:
                 "SELECT project, session_id, COALESCE(ts,0) ts, model, COALESCE(input_tokens,0) it, "
                 "COALESCE(output_tokens,0) ot, COALESCE(cache_read,0) cr, COALESCE(cache_creation,0) cc "
                 "FROM usage WHERE " + " AND ".join(conds), tuple(args)):
-            if model_family(r["model"]) != "opus" or r["ot"] >= short_output:
+            if model_family(r["model"]) not in _PREMIUM or r["ot"] >= short_output:
                 continue
             toks = dict(input_tokens=r["it"], output_tokens=r["ot"], cache_read=r["cr"], cache_creation=r["cc"])
             s = costing.reprice(r["model"], **toks) - costing.reprice("claude-sonnet-4-6", **toks)
