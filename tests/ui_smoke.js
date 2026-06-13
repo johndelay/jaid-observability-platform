@@ -1035,11 +1035,11 @@ check('renderCoach: Claude Code handoff + bundle + honesty banner + empty/null s
     bundle: { score: 71.2, grade: 'C', healthy_pct: 42.0, cache_ratio: 0.9, compaction_manual: 6,
               compaction_auto: 1, skill_use: 2, subagent_spawn: 5, messages: 800 },
     recent_sessions: [{ session_id: 'sid-A', project: 'proj-A', host: 'h1', ts: 1700000000, messages: 320 }],
-    handoff: { cmd: '/claude-coach', note: 'Run this in your own Claude Code.' } };
+    handoff: { cmd: '/jaid-coach', note: 'Run this in your own Claude Code.' } };
   ctx.renderCoach();
   const out = document.getElementById('scene-coach').innerHTML;
   if (!out.includes('Coach me with Claude Code')) throw new Error('Claude Code handoff card missing');
-  if (!out.includes('/claude-coach') || !out.includes('data-copy="/claude-coach"')) throw new Error('copyable /claude-coach cmd missing');
+  if (!out.includes('/jaid-coach') || !out.includes('data-copy="/jaid-coach"')) throw new Error('copyable /jaid-coach cmd missing');
   if (!out.includes('content-free')) throw new Error('content-free honesty banner missing (must always show)');
   if (!out.includes('opportunities, not judgments')) throw new Error('opportunities-not-judgments framing missing');
   if (!out.includes('Session Autopsy')) throw new Error('Autopsy section missing');

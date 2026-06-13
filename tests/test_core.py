@@ -24,7 +24,7 @@ import maintenance    # noqa: E402
 import redact         # noqa: E402
 import portable       # noqa: E402
 import crypto         # noqa: E402
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skill", "claude-coach"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skill", "jaid-coach"))
 import coach_metrics  # noqa: E402
 import shutil        # noqa: E402
 import subprocess    # noqa: E402
@@ -1435,7 +1435,7 @@ class MedalTests(unittest.TestCase):
 
 
 class CoachMetricsTests(unittest.TestCase):
-    """The Claude Coach standalone scanner (skill/claude-coach/coach_metrics.py) must compute the SAME
+    """The JAID Coach standalone scanner (skill/jaid-coach/coach_metrics.py) must compute the SAME
     aggregate bundle the dashboard's server._craft_aggregates does — same token_economics / zone_time /
     event_totals definitions — so the coached score matches the dashboard exactly."""
 

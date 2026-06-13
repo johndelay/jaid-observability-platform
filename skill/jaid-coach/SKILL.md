@@ -1,9 +1,9 @@
 ---
-name: claude-coach
-description: Personalized coaching on how well you use Claude Code — efficiency, context hygiene, and craft — read from your OWN local usage data and coached by your own Claude. Zero infra: works off ~/.claude/projects transcripts with no server, no Docker, no third party (uses the cc-observability dashboard automatically if one is running). Use when the user asks to be coached, asks "how am I doing / am I improving / review my Claude usage / what's my craft score / how can I use Claude better / claude coach", or wants advice on cost, model right-sizing, compaction habits, the "dumb zone", or award/medal progress.
+name: jaid-coach
+description: Personalized coaching on how well you use Claude Code — efficiency, context hygiene, and craft — read from your OWN local usage data and coached by your own Claude. Zero infra: works off ~/.claude/projects transcripts with no server, no Docker, no third party (uses the cc-observability dashboard automatically if one is running). Use when the user asks to be coached, asks "how am I doing / am I improving / review my Claude usage / what's my craft score / how can I use Claude better / jaid coach", or wants advice on cost, model right-sizing, compaction habits, the "dumb zone", or award/medal progress.
 ---
 
-# Claude Coach — coach the user to use Claude Code better
+# JAID Coach — coach the user to use Claude Code better
 
 You are coaching the user on **how well they use Claude Code** — not the work itself, their *craft*: are
 they efficient with tokens, do they keep context healthy, do they use the tool's leverage (skills,
@@ -17,9 +17,9 @@ data* — no server, no egress, no setup required.
    source and prints one compact JSON object — that JSON is your entire input; you do **not** read raw
    transcripts (dogfood the context discipline you're about to coach):
    ```bash
-   python3 "$(dirname "$(readlink -f ~/.claude/skills/claude-coach/SKILL.md)")/coach_metrics.py"
+   python3 "$(dirname "$(readlink -f ~/.claude/skills/jaid-coach/SKILL.md)")/coach_metrics.py"
    ```
-   (Or just `python3 ~/.claude/skills/claude-coach/coach_metrics.py`. Append `--standalone` to force the
+   (Or just `python3 ~/.claude/skills/jaid-coach/coach_metrics.py`. Append `--standalone` to force the
    no-dashboard scan. Set `CC_URL` / `CC_ACCESS_PIN` to point at a dashboard on another host.)
    - `source: "dashboard"` → numbers came from a running cc-observability instance (authoritative; includes
      `drift` + `accounts`). `source: "standalone"` → computed live from local transcripts (no dashboard
