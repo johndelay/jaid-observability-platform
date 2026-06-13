@@ -303,7 +303,9 @@
     word-break:break-word;line-height:1.5;color:var(--txt);cursor:pointer;user-select:all}
   code.hcmd .cp{position:absolute;top:6px;right:6px;font-size:10px;font-weight:700;color:var(--muted);
     background:var(--card);border:1px solid var(--line);border-radius:6px;padding:2px 7px;user-select:none}
-  /* ❓ Help modal — accent links + action buttons */
+  /* ❓ Help modal — TheDeLay.com logo (vendored locally, links out), accent links + action buttons */
+  #helpmodalbody .hlogo{display:block;text-align:center;margin:2px 0 12px}
+  #helpmodalbody .hlogo img{max-width:min(260px,70%);height:auto;border-radius:6px}
   #helpmodalbody a{color:var(--accent);font-weight:700;text-decoration:none}
   #helpmodalbody a:hover{text-decoration:underline}
   #helpmodalbody .hlinks{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
@@ -934,6 +936,8 @@ function helpModalBody(){
       +"container health and the most recent logs."
   ].join('\n');
   return ''
+    +`<a class="hlogo" href="https://thedelay.com" target="_blank" rel="noopener noreferrer" title="TheDeLay.com">`
+      +`<img src="/thedelay-logo.gif" alt="TheDeLay.com"></a>`
     +`<p>Two fast ways to get unstuck${ver}:</p>`
     +`<h4>1 · Ask your own Claude</h4>`
     +`<p>You’re already running Claude Code — it’s the best troubleshooter for this app because it can actually `

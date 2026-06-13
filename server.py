@@ -1346,6 +1346,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file("nosleep.mp4", "video/mp4")
         elif path == "/nosleep.webm":
             self._send_file("nosleep.webm", "video/webm")
+        elif path == "/thedelay-logo.gif":
+            # vendored locally (NOT hotlinked) so opening the ❓ Help modal stays zero-egress
+            self._send_file("thedelay-logo.gif", "image/gif")
         else:
             self._send_text("not found", 404)
 

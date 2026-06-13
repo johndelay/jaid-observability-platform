@@ -1010,6 +1010,10 @@ check('helpModalBody: troubleshooting prompt + GitHub repo link + version; open/
   if (typeof ctx.helpModalBody !== 'function') throw new Error('helpModalBody() not defined');
   win._about = { version: '9.9.9', runtime: 'docker' };
   const body = ctx.helpModalBody();
+  // TheDeLay.com logo at the top — clickable to the site, image served LOCALLY (vendored, not hotlinked → zero-egress)
+  if (!/href="https:\/\/thedelay\.com"/.test(body)) throw new Error('help: TheDeLay.com logo link missing');
+  if (!/<img src="\/thedelay-logo\.gif"/.test(body)) throw new Error('help: logo must be served locally (/thedelay-logo.gif), not hotlinked off-site');
+  if (/<img src="https?:/.test(body)) throw new Error('help: a remote <img> would break the no-egress promise — vendor it locally');
   if (!body.includes('github.com/johndelay/jaid-observability-platform')) throw new Error('help: GitHub repo link missing');
   if (!body.includes('/issues')) throw new Error('help: Report-a-bug (issues) link missing');
   if (!/Ask your own Claude/.test(body)) throw new Error('help: "ask your own Claude" path missing');
