@@ -1,7 +1,7 @@
 {
-  "name": "Claude Code — Context",
-  "short_name": "CC Context",
-  "description": "Claude Code context-window fuel gauge",
+  "name": "JAID Observability Platform",
+  "short_name": "JAID",
+  "description": "Context-window fuel gauge for Claude Code sessions",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0b0e14",
