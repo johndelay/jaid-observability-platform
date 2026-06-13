@@ -430,6 +430,23 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     await page.waitForFunction(() => { const h = document.getElementById('helpmodal'); return h && h.hidden; }, undefined, { timeout: 3000 });
   });
 
+  await check('menu → JAID Coach opens the coach modal (/jaid-coach copy cmd); Esc closes it', async () => {
+    await page.click('#menubtn');
+    await page.waitForFunction(() => { const m = document.getElementById('menu'); return m && m.hidden === false; }, undefined, { timeout: 3000 });
+    await page.$eval('[data-coach-open]', el => el.click());
+    await page.waitForFunction(() => {
+      const c = document.getElementById('coachmodal'), m = document.getElementById('menu');
+      return c && !c.hidden && m && m.hidden;
+    }, undefined, { timeout: 3000 });
+    const ok = await page.evaluate(() => {
+      const b = document.getElementById('coachmodalbody').innerHTML;
+      return /JAID Coach/.test(b) && b.includes('data-copy="/jaid-coach"') && !/Claude Coach/.test(b);
+    });
+    if (!ok) throw new Error('coach modal must name JAID Coach + carry the /jaid-coach copy command (and not say "Claude Coach")');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => { const c = document.getElementById('coachmodal'); return c && c.hidden; }, undefined, { timeout: 3000 });
+  });
+
   // Screenshot artifact (gitignored) — eyes-on confirmation of real layout/CSS, fixed name so it overwrites.
   let shot = '';
   await check('saves a full-page screenshot artifact', async () => {
