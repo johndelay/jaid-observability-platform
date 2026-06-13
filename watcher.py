@@ -489,9 +489,15 @@ def collect_snapshots():
                     "subagents": [], "subagent_running": 0, "file_mtime": fresh}
             snaps[sid] = base
         base["answerable"] = bool(st.get("answerable"))
-        base["state"] = st.get("state")
-        base["awaiting_input_since"] = st.get("awaiting_input_since")
-        base["needs_me"] = (st.get("state") == "waiting")
+        # Only a .state.json carries an explicit `state` (read_state_files sets it only for kind=="state").
+        # A statusline-only .status.json has no `state` key, so st.get("state") is None — it must NOT clobber
+        # the transcript-derived 'waiting'/'working'. (Bug: hosts that run the statusline hook but not the
+        # state hooks — e.g. pblaptop — had every session forced to "unknown"/needs_me=False, so a session
+        # genuinely awaiting input never surfaced in Triage.)
+        if st.get("state") is not None:
+            base["state"] = st.get("state")
+            base["awaiting_input_since"] = st.get("awaiting_input_since")
+            base["needs_me"] = (st.get("state") == "waiting")
         base["state_age"] = round(now - st["state_mtime"], 1) if st.get("state_mtime") else None
         base["auth_window"] = st.get("auth_window")
         base["auth_used_pct"] = st.get("auth_used_pct")

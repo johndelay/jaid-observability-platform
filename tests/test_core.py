@@ -246,6 +246,30 @@ class WatcherTests(unittest.TestCase):
             shutil.rmtree(state, ignore_errors=True)
             shutil.rmtree(proj, ignore_errors=True)
 
+    def test_statusline_only_host_keeps_transcript_state(self):
+        # Regression (pblaptop Triage blind-spot, 2026-06-12): a host that runs the statusline hook
+        # (.status.json) but NOT the state hooks (.state.json) must keep the transcript-derived
+        # 'waiting'. The status file carries no `state` key, so it must not clobber state to None
+        # (which rendered as "unknown"/needs_me=False, hiding sessions actually awaiting input).
+        state, proj = tempfile.mkdtemp(), tempfile.mkdtemp()
+        sid = "sess-statusonly"
+        with open(os.path.join(proj, sid + ".jsonl"), "w") as f:
+            f.write(json.dumps(_asst()) + "\n")        # last msg = assistant -> derives 'waiting'
+        with open(os.path.join(state, sid + ".status.json"), "w") as f:
+            json.dump({"used_percentage": 38, "account": "x@y.com"}, f)   # statusline only, NO state
+        saved = (watcher.STATE_DIR, watcher.PROJECTS_DIRS, watcher.ACCOUNT)
+        try:
+            watcher.STATE_DIR, watcher.PROJECTS_DIRS, watcher.ACCOUNT = state, [proj], "host@y.com"
+            snaps = {s["session_id"]: s for s in watcher.collect_snapshots()}
+            self.assertIn(sid, snaps)
+            self.assertEqual(snaps[sid]["state"], "waiting")   # NOT clobbered to None by the status file
+            self.assertTrue(snaps[sid]["needs_me"])
+            self.assertEqual(snaps[sid]["account"], "x@y.com")  # statusline account still flows through
+        finally:
+            watcher.STATE_DIR, watcher.PROJECTS_DIRS, watcher.ACCOUNT = saved
+            shutil.rmtree(state, ignore_errors=True)
+            shutil.rmtree(proj, ignore_errors=True)
+
 
 class ServerTests(unittest.TestCase):
     def test_window_for(self):
