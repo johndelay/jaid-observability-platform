@@ -1690,6 +1690,18 @@ function renderEfficiency(){
   if(!e||e.enabled===false){ sc.innerHTML=h+'<div class="empty">No data yet — it builds as the collector records usage.</div>'; return; }
   if(e.error){ sc.innerHTML=h+'<div class="empty">Couldn’t compute efficiency right now.</div>'; return; }
   const sv=e.savings||{}, pol=(sv.policies||[]).filter(p=>p.turns>0);
+  // — 💡 plain-English recommendation (deterministic, no AI): synthesize the breakdown into one actionable line —
+  const rbd=e.savings_breakdown||{}, rproj=(rbd.by_project||[]).filter(x=>x.saved_usd>0),
+        rshort=(sv.policies||[]).find(p=>p.id==='short_opus_sonnet');
+  if(rproj.length && rshort && rshort.saved_usd>0){
+    const t=rproj[0];
+    h+=`<div class="lcard" style="border-color:var(--green);box-shadow:0 0 0 1px rgba(0,255,136,.25)">
+        <h3 style="color:var(--green)">💡 Recommendation</h3>
+        <p style="margin:0">Most of your right-sizing opportunity is in <b>${esc(projDisplay(t.project))}</b> — about `
+      +`<b>~${usd(t.saved_usd)}</b> over the last ${rbd.days||30} days across ${t.turns} short, low-output turns. `
+      +`Consider <b>defaulting that project to a cheaper model</b> (e.g. Sonnet for routine edits${rproj.length>1?`; next up: <b>${esc(projDisplay(rproj[1].project))}</b> ~${usd(rproj[1].saved_usd)}`:''}).</p>`
+      +`<p class="foot" style="text-align:left;margin-top:6px">A heuristic from your own usage — not a judgment. Quality isn’t observable, so try it where the work is routine and keep the big model for the hard stuff.</p></div>`;
+  }
   // — what-if downgrade savings —
   if(pol.length){
     const top=pol.reduce((a,b)=>b.saved_usd>a.saved_usd?b:a,pol[0]);
@@ -1709,7 +1721,7 @@ function renderEfficiency(){
   const bd=e.savings_breakdown||{}, bp=(bd.by_project||[]).filter(x=>x.saved_usd>0), bs=(bd.by_session||[]).filter(x=>x.saved_usd>0);
   if(bp.length||bs.length){
     h+='<div class="lcard"><h3>Where to right-size · last '+(bd.days||30)+'d</h3>';
-    h+='<p class="foot" style="text-align:left;margin:0 0 6px">The <b>short Opus → Sonnet</b> opportunity (low-output Opus turns) by <b>where</b> it lands — the spots worth defaulting to a smaller model.</p>';
+    h+='<p class="foot" style="text-align:left;margin:0 0 6px">The <b>short Opus/Fable → Sonnet</b> opportunity (low-output premium-model turns) by <b>where</b> it lands — the spots worth defaulting to a smaller model.</p>';
     if(bp.length){
       const mx=Math.max(1,...bp.map(x=>x.saved_usd||0));
       h+='<div class="foot" style="text-align:left;font-weight:700;margin-top:4px">By project</div>';

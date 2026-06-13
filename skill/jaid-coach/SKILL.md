@@ -64,7 +64,7 @@ data* — no server, no egress, no setup required.
      to a subagent; it's leverage you're leaving on the table." · "X% of your context-time is in the danger
      zone — `/compact` earlier to stay sharp (Context Rot degrades quality well before the window fills)." ·
      "You're 2 manual compacts from the next Context Surgeon tier." · **Efficiency (V11):** "~$X/30d of your
-     short, low-output Opus turns *look* downgradeable to Sonnet — worth trying Sonnet for quick edits"
+     short, low-output Opus/Fable turns *look* downgradeable to Sonnet — worth trying Sonnet for quick edits"
      (lead with `short_opus_sonnet`, the defensible policy; treat `all_opus_sonnet` as the aggressive
      ceiling, not a recommendation). **When `savings_breakdown` is present, get specific:** "most of that is in
      **`<by_project[0].project>`** (~$Y across N short-Opus turns) — consider defaulting that project to Sonnet
