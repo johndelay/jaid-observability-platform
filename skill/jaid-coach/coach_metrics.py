@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Claude Coach — metrics gatherer (V12).
+"""JAID Coach — metrics gatherer (V12).
 
 Emits ONE compact JSON object of rate-normalized, content-free coaching metrics for your Claude Code
-usage, which the `claude-coach` Skill then reads and turns into personalized advice — coached by your OWN
+usage, which the `jaid-coach` Skill then reads and turns into personalized advice — coached by your OWN
 Claude, no server or third party required.
 
 Two sources, auto-selected (prefer the richer one, never fail):

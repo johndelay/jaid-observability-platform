@@ -884,7 +884,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _coach(self):
         """V8 Coach: the content-free coaching bundle + recent-session list (Autopsy picker) + a 'coach me with
-        Claude Code' handoff (the /claude-coach Skill), PLUS the latest in-app narrative when the host coach-worker
+        Claude Code' handoff (the /jaid-coach Skill), PLUS the latest in-app narrative when the host coach-worker
         has produced one (Slice B). The container itself never calls a model — it has neither the claude CLI nor
         the user's login; the worker generates with `claude -p` (or Ollama) and POSTs back. Auth-gated."""
         if not _store:
@@ -899,7 +899,7 @@ class Handler(BaseHTTPRequestHandler):
                 "enabled": True, "engine": "handoff", "estimate": True,
                 "account": acct, "accounts": _store.craft_accounts(), "bundle": bundle,
                 "recent_sessions": _store.recent_sessions(12),
-                "handoff": {"cmd": "/claude-coach",
+                "handoff": {"cmd": "/jaid-coach",
                             "note": "Run this in your own Claude Code — it reads your local metrics and coaches "
                                     "you, no server or egress."},
                 "pending": cs["pending"], "narrative": cs["narrative"],

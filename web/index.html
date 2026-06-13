@@ -1717,7 +1717,7 @@ async function setPlanPrice(account){
 async function pollEfficiency(){try{const r=await fetch('/efficiency');if(r.ok){window._eff=await r.json();renderEfficiency();}}catch(_){}}
 
 // ---- 🧠 Coach scene (V8): AI coaching + Session Autopsy. OFF the 10s live path (slow poll). ----
-// Slice A engine = "handoff": coach via your own Claude Code (the /claude-coach Skill); the Autopsy is a
+// Slice A engine = "handoff": coach via your own Claude Code (the /jaid-coach Skill); the Autopsy is a
 // content-free per-session report card. The in-app Claude/Ollama narrative lands in Slice B (host coach-worker).
 let autopsySid=null;
 const FAMCOL={opus:'var(--accent)',sonnet:'var(--green)',haiku:'var(--amber)',other:'var(--muted)'};
@@ -1752,7 +1752,7 @@ function renderCoach(){
   }
   h+='</div>';
   // — Coach-me handoff (always available; Slice A engine) —
-  const ho=c.handoff||{}, cmd=ho.cmd||'/claude-coach';
+  const ho=c.handoff||{}, cmd=ho.cmd||'/jaid-coach';
   h+='<div class="lcard"><h3>Coach me with Claude Code</h3>'
     +`<p class="foot" style="text-align:left">${esc(ho.note||'Run this in your own Claude Code — it reads your local metrics and coaches you, no server or egress.')}</p>`
     +`<code data-copy="${esc(cmd)}" class="mcpcmd">${esc(cmd)}<span class="cp">⧉ copy</span></code></div>`;

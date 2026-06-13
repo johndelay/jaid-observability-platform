@@ -1,4 +1,4 @@
-# Claude Coach — a zero-infra Claude Code coaching Skill
+# JAID Coach — a zero-infra Claude Code coaching Skill
 
 Your own Claude, coaching you on how well you use Claude Code — **efficiency** (cache use), **context
 hygiene** (compaction discipline, dumb-zone time), and **craft** (skills, subagents) — read straight from
@@ -15,10 +15,10 @@ your local `~/.claude/projects` transcripts.
 Symlink (or copy) this directory into your Claude skills folder:
 
 ```bash
-ln -sfn "$(pwd)/skill/claude-coach" ~/.claude/skills/claude-coach   # from the repo root
+ln -sfn "$(pwd)/skill/jaid-coach" ~/.claude/skills/jaid-coach   # from the repo root
 ```
 
-Then in any Claude Code session: **`/claude-coach`** — or just ask *"coach me on my Claude usage"*,
+Then in any Claude Code session: **`/jaid-coach`** — or just ask *"coach me on my Claude usage"*,
 *"how's my craft score?"*, *"am I improving?"*.
 
 ## Optional config

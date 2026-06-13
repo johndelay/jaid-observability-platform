@@ -15,7 +15,7 @@ Engines (COACH_ENGINE):
   auto  (default) — `claude -p` if the CLI is on PATH, else Ollama if CC_OLLAMA_URL is set & reachable, else off
   claude          — the user's own Claude Code CLI (`claude -p`); costs the user's tokens (keep prompts lean)
   ollama          — a local Ollama (CC_OLLAMA_URL / CC_OLLAMA_MODEL); free/offline, the opt-in pivot
-  off             — never generate (the scene still shows metrics + the /claude-coach handoff)
+  off             — never generate (the scene still shows metrics + the /jaid-coach handoff)
 
 INVARIANTS: content-free in (only the server's aggregate bundle — never transcripts); both engines are LOCAL
 (the user's Claude / a LAN Ollama), never a third-party relay. Graceful no-op on every failure.
@@ -124,7 +124,7 @@ def pick_engine():
 
 def generate(bundle):
     """Build the prompt and run the resolved engine. Returns (narrative, engine_name) — narrative None on
-    no-op/failure (the scene then just keeps showing metrics + the /claude-coach handoff)."""
+    no-op/failure (the scene then just keeps showing metrics + the /jaid-coach handoff)."""
     eng = pick_engine()
     if eng == "off":
         return None, "off"
