@@ -1005,6 +1005,25 @@ check('renderMcp shows a ? help button and mcpHelpBody builds populate + OS auto
   win._mcp = null;
 });
 
+// ❓ Help & troubleshooting modal (opened from the hamburger menu)
+check('helpModalBody: troubleshooting prompt + GitHub repo link + version; open/close safe', () => {
+  if (typeof ctx.helpModalBody !== 'function') throw new Error('helpModalBody() not defined');
+  win._about = { version: '9.9.9', runtime: 'docker' };
+  const body = ctx.helpModalBody();
+  if (!body.includes('github.com/johndelay/jaid-observability-platform')) throw new Error('help: GitHub repo link missing');
+  if (!body.includes('/issues')) throw new Error('help: Report-a-bug (issues) link missing');
+  if (!/Ask your own Claude/.test(body)) throw new Error('help: "ask your own Claude" path missing');
+  if (!body.includes('9.9.9')) throw new Error('help: live version not surfaced');
+  if (!/no-egress|sends none of your data/.test(body)) throw new Error('help: no-egress reassurance missing');
+  // copyable troubleshooting prompt must survive esc()-into-attribute (no raw quotes/backticks)
+  const m = body.match(/data-copy="([^"]*)"/g) || [];
+  if (!m.length) throw new Error('help: no copyable troubleshooting prompt found');
+  if (/[`]/.test(body.replace(/<[^>]*>/g, ''))) throw new Error('help: backtick in copy payload would break the template literal');
+  if (typeof ctx.openHelpModal !== 'function' || typeof ctx.closeHelpModal !== 'function') throw new Error('open/closeHelpModal not defined');
+  ctx.openHelpModal(); ctx.closeHelpModal();   // must not throw in the stubbed DOM
+  win._about = null;
+});
+
 // 9m) 🧠 Coach scene (V8 Slice A): Claude Code handoff + content-free bundle + honesty framing + empty/null
 check('renderCoach: Claude Code handoff + bundle + honesty banner + empty/null states', () => {
   if (typeof ctx.renderCoach !== 'function') throw new Error('renderCoach() not defined');

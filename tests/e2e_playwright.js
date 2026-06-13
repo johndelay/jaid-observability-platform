@@ -412,6 +412,24 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     await page.waitForFunction(() => { const m = document.getElementById('menu'); return m && m.hidden === true; }, undefined, { timeout: 3000 });
   });
 
+  await check('menu → Help & troubleshooting opens the help modal (repo link + copy prompt); Esc closes it', async () => {
+    await page.click('#menubtn');
+    await page.waitForFunction(() => { const m = document.getElementById('menu'); return m && m.hidden === false; }, undefined, { timeout: 3000 });
+    await page.$eval('[data-help-open]', el => el.click());
+    // opening Help closes the menu and reveals the modal
+    await page.waitForFunction(() => {
+      const h = document.getElementById('helpmodal'), m = document.getElementById('menu');
+      return h && !h.hidden && m && m.hidden;
+    }, undefined, { timeout: 3000 });
+    const ok = await page.evaluate(() => {
+      const b = document.getElementById('helpmodalbody').innerHTML;
+      return b.includes('github.com/johndelay/jaid-observability-platform') && /data-copy=/.test(b);
+    });
+    if (!ok) throw new Error('help modal missing the GitHub repo link or the copyable troubleshooting prompt');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => { const h = document.getElementById('helpmodal'); return h && h.hidden; }, undefined, { timeout: 3000 });
+  });
+
   // Screenshot artifact (gitignored) — eyes-on confirmation of real layout/CSS, fixed name so it overwrites.
   let shot = '';
   await check('saves a full-page screenshot artifact', async () => {
