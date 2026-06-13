@@ -1,4 +1,4 @@
-# Releasing cc-observability
+# Releasing JAID Observability Platform
 
 This document describes the end-to-end steps to cut a new release and activate the
 opt-in self-update checker for users who have set `CC_UPDATE_URL`.

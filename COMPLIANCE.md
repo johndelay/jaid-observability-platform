@@ -8,7 +8,7 @@
 
 ## What this tool does (and deliberately does not do)
 
-cc-observability is a **passive, local observability layer** for Claude Code:
+JAID Observability Platform is a **passive, local observability layer** for Claude Code:
 
 - **Reads your own local transcript files** (`~/.claude/projects/**/*.jsonl`) **read-only**. These are files
   Claude Code writes to disk; the schema is documented by Anthropic.
@@ -35,7 +35,7 @@ Claude Code harness." The publicly stated distinction is:
 > Calling the actual `claude` CLI (Anthropic's official product) = **allowed**.
 > Extracting OAuth tokens for a third-party API client = **banned**.
 
-cc-observability is squarely in the first category: it reads local files and drives the genuine CLI. It
+JAID Observability Platform is squarely in the first category: it reads local files and drives the genuine CLI. It
 makes no Anthropic/vendor API calls and never handles credentials, so the token-reuse / harness-spoofing prohibition does
 not apply. Anthropic's clarifications do not address passive monitoring / observability tooling, and a
 broad ecosystem of similar local tools (e.g. ccusage and various Claude Code monitors) operates the same way.

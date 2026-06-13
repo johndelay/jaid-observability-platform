@@ -1,6 +1,6 @@
-# Upgrading cc-observability (and what protects your data)
+# Upgrading JAID Observability Platform (and what protects your data)
 
-cc-observability is built so the **app code and your data are separate** — you can replace the app
+JAID Observability Platform is built so the **app code and your data are separate** — you can replace the app
 (even across major versions) without losing history. This doc explains the boundary and the safety net.
 
 ## The data/config boundary
