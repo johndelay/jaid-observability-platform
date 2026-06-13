@@ -1028,6 +1028,20 @@ check('helpModalBody: troubleshooting prompt + GitHub repo link + version; open/
   win._about = null;
 });
 
+// 🧠 JAID Coach modal (hamburger menu) — describes the skill + shows how to run it
+check('coachModalBody: names JAID Coach (not "Claude Coach"), shows /jaid-coach + how-to; open/close safe', () => {
+  if (typeof ctx.coachModalBody !== 'function') throw new Error('coachModalBody() not defined');
+  const body = ctx.coachModalBody();
+  if (!/JAID Coach/.test(body)) throw new Error('coach: skill not named "JAID Coach"');
+  if (/Claude Coach/.test(body)) throw new Error('coach: must NOT call it "Claude Coach"');
+  if (!body.includes('data-copy="/jaid-coach"')) throw new Error('coach: copyable /jaid-coach command missing');
+  if (!/How to use/.test(body)) throw new Error('coach: "how to use" section missing');
+  if (!/local|no server|no third party/.test(body)) throw new Error('coach: local/no-egress framing missing');
+  if (/[`]/.test(body.replace(/<[^>]*>/g, ''))) throw new Error('coach: backtick in copy payload would break the template literal');
+  if (typeof ctx.openCoachModal !== 'function' || typeof ctx.closeCoachModal !== 'function') throw new Error('open/closeCoachModal not defined');
+  ctx.openCoachModal(); ctx.closeCoachModal();   // must not throw in the stubbed DOM
+});
+
 // 9m) 🧠 Coach scene (V8 Slice A): Claude Code handoff + content-free bundle + honesty framing + empty/null
 check('renderCoach: Claude Code handoff + bundle + honesty banner + empty/null states', () => {
   if (typeof ctx.renderCoach !== 'function') throw new Error('renderCoach() not defined');
