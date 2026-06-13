@@ -44,12 +44,9 @@ def zone_band(ctx):
 
 
 def model_family(model):
-    """Coarse model family for the mix chart: opus | sonnet | haiku | other (unknown/synthetic/None)."""
-    m = costing.normalize(model)
-    for fam in ("opus", "sonnet", "haiku"):
-        if fam in m:
-            return fam
-    return "other"
+    """Coarse model family for the mix chart: opus | sonnet | haiku | fable | mythos | other.
+    Single source of truth = costing.family_of (so pricing + the mix chart agree on families)."""
+    return costing.family_of(model) or "other"
 # Must be WRITABLE. In Docker the transcript/state mounts are read-only, so the compose sets
 # CC_DB_PATH to a dedicated rw volume; outside Docker we default under ~/.cache.
 DEFAULT_PATH = os.environ.get("CC_DB_PATH") or os.path.expanduser("~/.cache/cc-observability/cc-usage.db")

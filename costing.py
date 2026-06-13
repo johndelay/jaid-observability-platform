@@ -30,18 +30,41 @@ _R = lambda i, o, cc, cr: {"input": i, "output": o, "cache_create": cc, "cache_r
 
 # Canonical (already-normalized) model id → rates. Longest-prefix match handles dated/variant ids.
 PRICES = {
+    # Fable 5 / Mythos 5 — flagship tier ($10 / $50 per M in/out; GA 2026-06-09). 1M window, flat (no
+    # above-200k tier). Cache rates use the standard multipliers every entry here applies: write(5m) =
+    # input×1.25, read = input×0.1. Source: platform.claude.com models overview (fetched 2026-06-12).
+    "claude-fable-5":         _R(10e-6, 50e-6, 12.5e-6, 1.0e-6),
+    "claude-mythos-5":        _R(10e-6, 50e-6, 12.5e-6, 1.0e-6),   # limited availability (Project Glasswing)
+    "claude-mythos-preview":  _R(10e-6, 50e-6, 12.5e-6, 1.0e-6),   # research preview; same Mythos-family rate (price not separately published)
     # Opus 4.5–4.8 (current pricing: $5 / $25 per M in/out)
     "claude-opus-4-8": _R(5e-6, 25e-6, 6.25e-6, 0.5e-6),
     "claude-opus-4-7": _R(5e-6, 25e-6, 6.25e-6, 0.5e-6),
     "claude-opus-4-6": _R(5e-6, 25e-6, 6.25e-6, 0.5e-6),
     "claude-opus-4-5": _R(5e-6, 25e-6, 6.25e-6, 0.5e-6),
-    # Legacy Opus 4 ($15 / $75 per M)
-    "claude-opus-4": _R(15e-6, 75e-6, 18.75e-6, 1.5e-6),
-    # Sonnet
+    # Legacy/deprecated Opus 4.x ($15 / $75 per M)
+    "claude-opus-4-1": _R(15e-6, 75e-6, 18.75e-6, 1.5e-6),   # deprecated (retires 2026-08-05)
+    "claude-opus-4-0": _R(15e-6, 75e-6, 18.75e-6, 1.5e-6),   # alias of the dated Opus 4 (deprecated)
+    "claude-opus-4":   _R(15e-6, 75e-6, 18.75e-6, 1.5e-6),   # dated id (claude-opus-4-YYYYMMDD) strips to this
+    # Sonnet ($3 / $15 per M) — flat, no above-200k tier (verified 2026-06-05)
     "claude-sonnet-4-6": _R(3e-6, 15e-6, 3.75e-6, 0.3e-6),
-    "claude-sonnet-4": _R(3e-6, 15e-6, 3.75e-6, 0.3e-6),   # flat — no above-200k tier (verified 2026-06-05)
-    # Haiku
+    "claude-sonnet-4-5": _R(3e-6, 15e-6, 3.75e-6, 0.3e-6),
+    "claude-sonnet-4-0": _R(3e-6, 15e-6, 3.75e-6, 0.3e-6),   # alias of the dated Sonnet 4 (deprecated)
+    "claude-sonnet-4":   _R(3e-6, 15e-6, 3.75e-6, 0.3e-6),
+    # Haiku ($1 / $5 per M)
     "claude-haiku-4-5": _R(1e-6, 5e-6, 1.25e-6, 0.1e-6),
+}
+
+# Coarse family detection (substring of the normalized id) + the CURRENT id to price an unknown member of
+# that family against. So a brand-new version (or a Bedrock/Vertex-prefixed id like `anthropic.claude-opus-…`)
+# prices at the right family rate instead of $0 — and never mis-matches a stale legacy rate. Order matters:
+# flagship families are checked first. A truly unknown family → None ($0).
+_FAMILIES = ("fable", "mythos", "opus", "sonnet", "haiku")
+_FAMILY_DEFAULT = {
+    "fable":  "claude-fable-5",
+    "mythos": "claude-mythos-5",
+    "opus":   "claude-opus-4-8",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku":  "claude-haiku-4-5",
 }
 
 _DATE_SUFFIX = re.compile(r"-\d{8}$")
@@ -57,19 +80,29 @@ def normalize(model):
     return m
 
 
+def family_of(model):
+    """Coarse family of a model id: fable | mythos | opus | sonnet | haiku | "" (unknown/synthetic/None).
+    Substring match on the normalized id, so Bedrock/Vertex-prefixed ids classify too."""
+    m = normalize(model)
+    if not m or "synthetic" in m:
+        return ""
+    for fam in _FAMILIES:
+        if fam in m:
+            return fam
+    return ""
+
+
 def rate_for(model):
-    """Return the rate dict for a model id, or None if unknown/synthetic (→ $0)."""
+    """Rate dict for a model id: exact id (after normalize) → its family's CURRENT rate → None ($0).
+    The family fallback means a brand-new version (or a Bedrock/Vertex-style id) prices at the right
+    family rate instead of $0 — and never mis-matches a stale legacy rate. Unknown family/synthetic → $0."""
     m = normalize(model)
     if not m or "synthetic" in m:
         return None
     if m in PRICES:
         return PRICES[m]
-    # longest-prefix match (e.g. an unseen dated/variant id falls back to its family)
-    best = None
-    for key in PRICES:
-        if m.startswith(key) and (best is None or len(key) > len(best)):
-            best = key
-    return PRICES[best] if best else None
+    fam = family_of(m)
+    return PRICES[_FAMILY_DEFAULT[fam]] if fam in _FAMILY_DEFAULT else None
 
 
 def tiered(tokens, base, above, tier_at=200_000):

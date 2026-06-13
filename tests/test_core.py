@@ -577,6 +577,28 @@ class CostingTests(unittest.TestCase):
         self.assertAlmostEqual(costing.reprice("claude-sonnet-4-6", **kw), 1000*3e-6 + 1000*15e-6, places=9)
         self.assertEqual(costing.reprice("<synthetic>", **kw), 0.0)                      # unknown → $0
 
+    def test_current_model_lineup_known(self):
+        # the app must price every CURRENT model (incl. recently-added Fable/Mythos) — not $0, not legacy
+        kw = dict(input_tokens=1000, output_tokens=1000)
+        self.assertAlmostEqual(costing.reprice("claude-fable-5", **kw),  1000*10e-6 + 1000*50e-6, places=9)  # $10/$50
+        self.assertAlmostEqual(costing.reprice("claude-mythos-5", **kw), 1000*10e-6 + 1000*50e-6, places=9)
+        self.assertAlmostEqual(costing.reprice("claude-sonnet-4-5", **kw), 1000*3e-6 + 1000*15e-6, places=9)  # explicit, not lucky-prefix
+        self.assertAlmostEqual(costing.reprice("claude-opus-4-1", **kw), 1000*15e-6 + 1000*75e-6, places=9)   # deprecated $15/$75
+        # families resolve, incl. the new ones
+        self.assertEqual(costing.family_of("claude-fable-5"), "fable")
+        self.assertEqual(costing.family_of("claude-mythos-5"), "mythos")
+        self.assertEqual(store.model_family("claude-fable-5"), "fable")
+
+    def test_unknown_version_falls_back_to_family_not_legacy_or_zero(self):
+        # a FUTURE/unseen version must price at its family's CURRENT rate — never silently $0, never the
+        # stale legacy rate (the old greedy-prefix bug would have priced opus-4-9 at legacy $15/$75)
+        f = costing.reprice("claude-opus-4-9", input_tokens=1000)        # unseen future Opus
+        self.assertAlmostEqual(f, 1000*5e-6, places=9)                   # → current Opus $5, NOT legacy $15
+        self.assertAlmostEqual(costing.reprice("claude-haiku-9-9", input_tokens=1000), 1000*1e-6, places=9)
+        # Bedrock/Vertex-prefixed id classifies + prices via family too
+        self.assertAlmostEqual(costing.reprice("anthropic.claude-sonnet-4-6", input_tokens=1000), 1000*3e-6, places=9)
+        self.assertEqual(costing.reprice("gpt-4", input_tokens=1000), 0.0)   # truly unknown family → $0
+
 
 def _usage_line(mid, rid, sid, ts_iso, ctx_read, model="claude-opus-4-8", side=False):
     return {"type": "assistant", "isSidechain": side, "requestId": rid, "sessionId": sid,
