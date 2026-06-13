@@ -1036,6 +1036,10 @@ check('helpModalBody: troubleshooting prompt + GitHub repo link + version; open/
   if (!/Ask your own Claude/.test(body)) throw new Error('help: "ask your own Claude" path missing');
   if (!body.includes('9.9.9')) throw new Error('help: live version not surfaced');
   if (!/no-egress|sends none of your data/.test(body)) throw new Error('help: no-egress reassurance missing');
+  // JAID commands section lists both bundled skills as copyable commands
+  if (!body.includes('data-copy="/jaid-coach"')) throw new Error('help: /jaid-coach command missing from JAID commands list');
+  if (!body.includes('data-copy="/jaid-setup"')) throw new Error('help: /jaid-setup command missing from JAID commands list');
+  if (!/JAID commands/.test(body)) throw new Error('help: "JAID commands" section heading missing');
   // copyable troubleshooting prompt must survive esc()-into-attribute (no raw quotes/backticks)
   const m = body.match(/data-copy="([^"]*)"/g) || [];
   if (!m.length) throw new Error('help: no copyable troubleshooting prompt found');
