@@ -57,6 +57,21 @@
     display:flex;flex-direction:column;gap:14px;
     padding:14px max(14px,(100% - 780px)/2) calc(var(--navh) + 14px + env(safe-area-inset-bottom))}
 
+  /* ---- Triage shell: the #scene-triage wrapper doesn't scroll; #app holds the scrolling session
+     list and #suggest-dock floats the Suggestions card over the bottom. The list scrolls BEHIND the
+     dock (foreground overlay), and #app reserves --dockh of bottom padding so the last rows clear
+     it. --dockh is measured in JS after the card paints (paintSuggestDock). ---- */
+  #scene-triage{overflow:hidden;position:relative;padding:0;gap:0;display:block}
+  #app{height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;
+    flex-direction:column;gap:14px;
+    padding:14px max(14px,(100% - 780px)/2)
+      calc(var(--navh) + 14px + env(safe-area-inset-bottom) + var(--dockh,0px))}
+  #suggest-dock{position:absolute;left:0;right:0;bottom:0;z-index:6;pointer-events:none;
+    padding:0 max(14px,(100% - 780px)/2) calc(var(--navh) + 12px + env(safe-area-inset-bottom))}
+  #suggest-dock:empty{display:none}
+  #suggest-dock .suggest{pointer-events:auto;background:var(--card);
+    box-shadow:0 -10px 28px rgba(0,0,0,.5)}
+
   /* ---- NEEDS YOU hero ---- */
   .needs{border:1px solid var(--line);border-radius:18px;overflow:hidden}
   .needs.hot{border-color:rgba(248,81,73,.5);box-shadow:0 0 0 1px rgba(248,81,73,.25),0 8px 30px rgba(248,81,73,.12)}
@@ -471,8 +486,12 @@
 
 <div id="carousel">
   <div id="track">
-    <!-- scene 0: Triage (render() fills #app) -->
-    <main id="app" class="scene"><div class="empty">Waiting for sessions…</div></main>
+    <!-- scene 0: Triage. #app scrolls the session list; #suggest-dock floats the Suggestions
+         card over the bottom (foreground — the list scrolls behind it). render() fills #app. -->
+    <section id="scene-triage" class="scene">
+      <main id="app"><div class="empty">Waiting for sessions…</div></main>
+      <div id="suggest-dock"></div>
+    </section>
 
     <!-- scene 1: Cost & Accounts (renderCost() fills it) -->
     <section id="scene-cost" class="scene legend"><div class="empty">Loading cost &amp; accounts…</div></section>
@@ -663,6 +682,9 @@
 
 <script>
 const app = document.getElementById('app');
+// Triage scene = a non-scrolling #scene-triage shell: the list scrolls in #app, the Suggestions card
+// floats over the bottom in #suggest-dock (foreground). render() fills #app; paintSuggestDock() the dock.
+const suggestDock = document.getElementById('suggest-dock');
 const dot = document.getElementById('dot');
 const ctext = document.getElementById('ctext');
 
@@ -1063,7 +1085,7 @@ function render(list){
   renderAccounts(); renderArchive();
   if(accountFilter) list=list.filter(s=>s.account===accountFilter);   // top-bar account filter
   list=list.filter(s=>!s.hidden);                                     // archived sessions live in the Archive scene
-  if(!list.length){app.innerHTML=accountFilter?'<div class="empty">No sessions for this account.<br>Tap “All” at the top to clear the filter.</div>':'<div class="empty">No active sessions.</div>';return;}
+  if(!list.length){app.innerHTML=accountFilter?'<div class="empty">No sessions for this account.<br>Tap “All” at the top to clear the filter.</div>':'<div class="empty">No active sessions.</div>';paintSuggestDock();return;}
   const needs=list.filter(s=>s.needs_me);
   const others=list.filter(s=>!s.needs_me);
 
@@ -1096,8 +1118,7 @@ function render(list){
     html+=`<section class="needs clear"><div class="h">✓ All clear</div><div class="clearmsg">Nothing is waiting on you right now.</div></section>`;
   }
 
-  // suggestions / reading card (always shown; screenshot-safe: public blog titles + content-free tips only)
-  html+=renderSuggestCard();
+  // (suggestions / reading card now floats in #suggest-dock at the bottom — see paintSuggestDock())
 
   // summary
   const fc=fullest>=85?'crit':fullest>=60?'warn':'';
@@ -1138,8 +1159,21 @@ function render(list){
     }
   }
   app.innerHTML=html;
-  _wireSuggest();                       // attach suggest card nav + checkbox handlers after each render
+  paintSuggestDock();                   // float the Suggestions card over the bottom + wire its handlers
   renderCost(list); renderHistory();   // keep the Cost & History scenes in sync on every data tick
+}
+
+// Paint the Suggestions card into the floating bottom dock, wire its nav/checkbox, then measure its
+// height into --dockh so #app reserves matching bottom padding (last rows clear the overlay).
+function paintSuggestDock(){
+  if(!suggestDock){ _wireSuggest(); return; }
+  suggestDock.innerHTML=renderSuggestCard();
+  _wireSuggest();
+  try{
+    const card=suggestDock.querySelector('.suggest'), root=document.documentElement;
+    if(root&&root.style&&root.style.setProperty)
+      root.style.setProperty('--dockh',((card&&card.offsetHeight)||0)+'px');
+  }catch(_){}
 }
 
 // ---- Cost & Accounts scene: per-account spend + plan rate-limits + Extra-Usage, with a fleet rollup ----
@@ -2560,7 +2594,7 @@ async function maintVacuum(){ if(!confirm('Vacuum reclaims freed space; may take
 })();
 
 const SCENES=[
-  {id:'triage', title:'Triage', icon:'🎯',el:'app'},
+  {id:'triage', title:'Triage', icon:'🎯',el:'scene-triage'},
   {id:'cost',   title:'Cost',   icon:'💰',el:'scene-cost'},
   {id:'history',title:'History', icon:'📈',el:'scene-history'},
   {id:'trophy', title:'Trophy', icon:'🏆',el:'scene-trophy'},

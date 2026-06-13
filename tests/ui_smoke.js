@@ -92,8 +92,21 @@ check('render(state) produces output (hero + rows)', () => {
   if (!out.includes('Needs you')) throw new Error('hero "Needs you" missing for a needs_me session');
 });
 
-// 3) render() with empty list (calm state)
-check('render([]) handles empty fleet', () => { ctx.render([]); });
+// 2b) Suggestions card moved to the floating bottom dock (#suggest-dock), out of the scrolling #app list
+check('Suggestions card renders in #suggest-dock, not in #app', () => {
+  ctx.render(STATE);
+  const dock = document.getElementById('suggest-dock').innerHTML;
+  if (!dock.includes('Suggestions')) throw new Error('Suggestions card missing from #suggest-dock');
+  if (document.getElementById('app').innerHTML.includes('Suggestions'))
+    throw new Error('Suggestions card should no longer be inside the scrolling #app list');
+});
+
+// 3) render() with empty list (calm state) — dock still paints (no list, but the card persists)
+check('render([]) handles empty fleet', () => {
+  ctx.render([]);
+  if (!document.getElementById('suggest-dock').innerHTML.includes('Suggestions'))
+    throw new Error('Suggestions dock should persist on the empty fleet');
+});
 
 // 3b) hero card shows the "what's being asked" preview (so you see it without drilling in)
 check('hero card shows last_msg ask preview', () => {
@@ -1197,21 +1210,20 @@ check('renderAbout: "Terms & License" button present in the About scene', () => 
 });
 
 // ---- Suggestions / Reading card ----
-check('render(): suggest card renders after the needs section with a Read → link (rel=noopener)', () => {
+check('render(): suggest card renders in the bottom dock with a Read → link (rel=noopener)', () => {
   ctx.render(STATE);   // STATE has a needs_me session so we exercise the "hot" needs branch
-  const out = document.getElementById('app').innerHTML;
-  if (!out.includes('class="suggest"')) throw new Error('suggest card (.suggest) missing from Triage render');
+  const out = document.getElementById('suggest-dock').innerHTML;   // card now floats in #suggest-dock
+  if (!out.includes('class="suggest"')) throw new Error('suggest card (.suggest) missing from the dock');
   if (!out.includes('Read →')) throw new Error('"Read →" link missing from the suggest card');
   if (!out.includes('rel="noopener noreferrer"')) throw new Error('Read → link missing rel="noopener noreferrer"');
-  // card must appear AFTER the needs section
-  const needsPos = out.indexOf('class="needs ');
-  const suggestPos = out.indexOf('class="suggest"');
-  if (suggestPos < needsPos) throw new Error('suggest card appeared before the needs section (wrong render order)');
+  // it must be OUT of the scrolling list (so the list scrolls behind it)
+  if (document.getElementById('app').innerHTML.includes('class="suggest"'))
+    throw new Error('suggest card should live in #suggest-dock, not inside the scrolling #app list');
 });
 
 check('render(): suggest card appears even in the "all clear" (no needs_me) state', () => {
   ctx.render([{ ...STATE[1], needs_me: false }]);
-  const out = document.getElementById('app').innerHTML;
+  const out = document.getElementById('suggest-dock').innerHTML;
   if (!out.includes('class="suggest"')) throw new Error('suggest card missing when all-clear');
 });
 
@@ -1219,7 +1231,7 @@ check('suggest: default state has suggest.fetch unchecked (no network call by de
   // prefGet('suggest.fetch', false) → false unless explicitly set
   // DOM: the checkbox renders without the checked attribute
   ctx.render(STATE);
-  const out = document.getElementById('app').innerHTML;
+  const out = document.getElementById('suggest-dock').innerHTML;
   if (!out.includes('id="sg-fetch-chk"')) throw new Error('suggest opt-in checkbox missing');
   // The checkbox should NOT render with "checked" in the default state (prefGet returns false for LS=null)
   // We verify no unconditional "checked" attribute on the checkbox element
@@ -1279,7 +1291,7 @@ check('suggest: fetched items — esc() applied: XSS bait in title/blurb comes o
   const origFetched = ctx._sgGetFetched();
   ctx._sgSetFetched([item]);
   ctx.render(STATE);
-  const out = document.getElementById('app').innerHTML;
+  const out = document.getElementById('suggest-dock').innerHTML;
   // The raw strings must NOT appear; esc() should have replaced < > "
   if (out.includes('<script>')) throw new Error('raw <script> tag found in rendered HTML — XSS not escaped');
   if (out.includes('<img')) throw new Error('raw <img> tag found in rendered HTML — XSS not escaped');
@@ -1301,7 +1313,7 @@ check('suggest: item with javascript: url is dropped by _sgSanitizeItem (not ren
   const origFetched = ctx._sgGetFetched();
   ctx._sgSetFetched([item]);
   ctx.render(STATE);
-  const out = document.getElementById('app').innerHTML;
+  const out = document.getElementById('suggest-dock').innerHTML;
   if (out.includes('javascript:')) throw new Error('javascript: url leaked into rendered HTML');
   ctx._sgSetFetched(origFetched);
 });
@@ -1322,7 +1334,7 @@ check('suggest: malformed/failed fetch → card still renders bundled list, no t
   sandbox.fetch = origFetch;
   // Card should still render using the bundled list (no crash)
   ctx.render(STATE);
-  const out = document.getElementById('app').innerHTML;
+  const out = document.getElementById('suggest-dock').innerHTML;
   if (!out.includes('class="suggest"')) throw new Error('suggest card missing after fetch failure');
   if (!out.includes('Read →')) throw new Error('Read → link missing from suggest card after fetch failure');
 });
@@ -1333,7 +1345,7 @@ check('suggest: _sgTick auto-advances to the next article', () => {
   ctx._sgSetFetched(null);          // use the bundled list
   ctx.render(STATE);
   // title is now wrapped in an <a> when the item has a url — tolerate the optional anchor when extracting
-  const titleOf = () => (document.getElementById('app').innerHTML.match(/sg-title">(?:<a[^>]*>)?([^<]*)/) || [])[1];
+  const titleOf = () => (document.getElementById('suggest-dock').innerHTML.match(/sg-title">(?:<a[^>]*>)?([^<]*)/) || [])[1];
   const before = titleOf();
   ctx._sgTick();                    // advance one
   const after = titleOf();
@@ -1347,7 +1359,7 @@ check('suggest: article title is a clickable link to the same url as Read →', 
   ctx.setFeat('dumbzone', false);   // bundled articles only (all have urls)
   ctx._sgSetFetched(null);
   ctx.render(STATE);
-  const html = document.getElementById('app').innerHTML;
+  const html = document.getElementById('suggest-dock').innerHTML;
   // the title div must contain an anchor opening in a new tab with rel=noopener
   const m = html.match(/sg-title"><a href="([^"]+)"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
   if (!m) throw new Error('sg-title is not a clickable new-tab link');
