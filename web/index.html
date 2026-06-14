@@ -154,8 +154,11 @@
   .row.stale{opacity:.5}
   .row .who{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .row .pct{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;text-align:right}
-  .row .mini{grid-column:1/-1;height:6px;border-radius:4px;background:var(--card2);overflow:hidden;margin-top:2px}
+  .row .mini-wrap{grid-column:1/-1;position:relative;margin-top:2px}
+  .row .mini{height:6px;border-radius:4px;background:var(--card2);overflow:hidden}
   .row .mini i{display:block;height:100%;border-radius:4px}
+  /* dumb-zone threshold ticks — thin vertical needles at drift/danger token boundaries on the fill bar */
+  .dz-tick{position:absolute;top:-3px;width:2px;height:12px;border-radius:1px;pointer-events:none;opacity:0.65}
   /* dumb-zone clarity pip: SOFT, separate from the compaction bar. The dot fills clockwise (conic) with
      the clarity hue; remainder faint. Deliberately small + muted — a heads-up, never an alarm. */
   .dz-pip{display:inline-flex;align-items:center;gap:3px;margin-left:6px;vertical-align:middle;
@@ -1246,10 +1249,20 @@ function render(list){
       const pip = dz && s.context_tokens!=null
         ? `<span class="dz-pip" title="🧠 Dumb-zone risk · ~${fmtTok(cl.ctx)} accumulated context. Tracks Context Rot (how much you're carrying), NOT how full the window is — a soft heuristic (your measured tool-errors show no hard knee). Fuller = consider /clear or /compact for a clean checkpoint.">🧠<i class="dot" style="--f:${cl.fill.toFixed(3)};--c:${cl.col}"></i></span>`
         : '';
+      // dumb-zone threshold ticks: thin needles on the fill bar showing where drift/danger start in token-space
+      const dzTick = (() => {
+        if (!dz || !s.window) return '';
+        const driftPct = (ZONE_TOK.drift / s.window) * 100;
+        if (driftPct >= 100) return '';
+        let out = `<span class="dz-tick" style="left:${driftPct.toFixed(1)}%;background:var(--amber)" title="Dumb-zone drift · ${fmtTok(ZONE_TOK.drift)} accumulated context tokens"></span>`;
+        const dangerPct = (ZONE_TOK.danger / s.window) * 100;
+        if (dangerPct < 100) out += `<span class="dz-tick" style="left:${dangerPct.toFixed(1)}%;background:var(--red)" title="Dumb-zone danger · ${fmtTok(ZONE_TOK.danger)} accumulated context tokens"></span>`;
+        return out;
+      })();
       html+=`<div class="row ${s.stale?'stale':''}" data-sid="${s.session_id}">
         <div class="who">${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span>${pip}</div>
         <div class="pct" style="color:${c}" title="Context window ${Math.round(s.pct)}% full — higher means closer to auto-compaction">${Math.round(s.pct)}%</div>
-        <div class="mini"><i style="width:${Math.min(100,s.pct)}%;background:${c}"></i></div>
+        <div class="mini-wrap"><div class="mini"><i style="width:${Math.min(100,s.pct)}%;background:${c}"></i></div>${dzTick}</div>
         <div class="sub">
           <span>${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}${multiAcct&&s.account?' · '+apx(s.account_approx)+esc(acctDisplay(s.account)):''}${s.authoritative?'<span class="tag">'+(s.window>=1000000?'1M':'200k')+'</span>':''}${s.subagent_running>0?' <span class="run">▸'+s.subagent_running+'</span>':''}</span>
           <span>${s.cost_usd!=null?(s.cost_est?'~':'')+usd(s.cost_usd)+' · ':''}${s.eta_secs?'⏱'+dur(s.eta_secs)+' · ':''}~${fmt(s.tokens_until_compact)} left · ${rel(s.age_secs)}</span>
