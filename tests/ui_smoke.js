@@ -517,11 +517,29 @@ check('low-% high-abs-token: % not compaction-red + soft 🧠 pip', () => {
   if (app.includes('class="pct" style="color:var(--red)"')) throw new Error('tile % rendered compaction-red at 23% (the conflation bug)');
 });
 
-// 9k) dumbzone toggle OFF → no zone chip/banner (falls back to the plain number)
+// 9j-2) dz-tick markers appear on the fill bar: 2 ticks for 1M window (drift 12% + danger 20%),
+//       1 tick for 200k window (drift 60%; danger = 100% = off bar)
+check('dz-tick markers on fill bar by window size', () => {
+  ctx.setFeat('dumbzone', true);
+  ctx.render([{ ...STATE[0], session_id: 'tick1m', eff_state: 'working', needs_me: false, pct: 30, context_tokens: 80000 }]);
+  const h1m = document.getElementById('app').innerHTML;
+  if (!h1m.includes('dz-tick')) throw new Error('dz-tick missing on 1M session');
+  if ((h1m.match(/class="dz-tick"/g)||[]).length < 2) throw new Error('expected 2 dz-tick marks on 1M session (drift + danger)');
+  if (!h1m.includes('data-tip=')) throw new Error('dz-tick missing data-tip tooltip on 1M session');
+  ctx.render([{ ...STATE[1], session_id: 'tick200k', eff_state: 'working', needs_me: false, pct: 30, context_tokens: 80000 }]);
+  const h200k = document.getElementById('app').innerHTML;
+  if (!h200k.includes('dz-tick')) throw new Error('dz-tick missing on 200k session');
+  if ((h200k.match(/class="dz-tick"/g)||[]).length !== 1) throw new Error('expected exactly 1 dz-tick on 200k session (danger off bar)');
+  if (!h200k.includes('data-tip=')) throw new Error('dz-tick missing data-tip tooltip on 200k session');
+});
+
+// 9k) dumbzone toggle OFF → no zone chip/banner/ticks (falls back to the plain number)
 check('dumb-zone toggle off hides the zone UI', () => {
   ctx.setFeat('dumbzone', false);
   ctx.render([{ ...STATE[1], session_id: 'dz', context_tokens: 150000, pct_to_compact: 60, needs_me: false }]);
-  if (document.getElementById('app').innerHTML.includes('dumb zone')) throw new Error('dumb-zone chip shown while toggled off');
+  const dzOff = document.getElementById('app').innerHTML;
+  if (dzOff.includes('dumb zone')) throw new Error('dumb-zone chip shown while toggled off');
+  if (dzOff.includes('dz-tick')) throw new Error('dz-tick shown while dumbzone toggled off');
   ctx.openDetail('dz');
   if (document.getElementById('dstats').innerHTML.includes('class="zone')) throw new Error('zone banner shown while toggled off');
   ctx.setFeat('dumbzone', true);   // restore default
