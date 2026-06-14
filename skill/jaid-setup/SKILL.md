@@ -7,7 +7,14 @@ description: Install and run the cc-observability dashboard NATIVELY (no Docker)
 
 You are installing the **cc-observability dashboard** on THIS machine, natively (no Docker). The audience runs
 Claude Code, so you do the per-OS wiring by reasoning about the host. The app is self-hosted, content-free, and
-makes no third-party network calls. Confirm with the user before installing system services.
+makes no third-party network calls.
+
+> **Ask before you touch the system — be careful, be polite (see `AGENTS.md`).** This skill installs a Python
+> venv (pulling packages), writes config, and installs a background service that runs at login. **Before each
+> step that changes anything outside this repo's checkout — installing packages, creating the venv, writing
+> `.env`, installing/enabling the background service, or anything needing `sudo` — tell the user exactly what
+> you're about to do and get a yes first.** The user can say "just do the whole install, don't ask each step"
+> to waive this for the session — then proceed. Absent that, ask. Walk the user through it; don't surprise them.
 
 ## What you're setting up
 A single Python process (`server.py`) that reads this host's `~/.claude/projects` transcripts read-only and
