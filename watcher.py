@@ -454,7 +454,7 @@ def read_state_files(now):
         rec.setdefault("cwd", d.get("cwd"))
         if kind == "state":
             rec.update(state=d.get("state"), awaiting_input_since=d.get("awaiting_input_since"),
-                       last_hook=d.get("last_hook"), state_mtime=mt)
+                       last_hook=d.get("last_hook"), notif_kind=d.get("notif_kind"), state_mtime=mt)
         elif kind == "target":
             # a tmux pane was recorded for this session -> answer-from-phone can reach it (this host).
             rec.update(answerable=True, tmux_pane=d.get("tmux_pane"), target_mtime=mt)
@@ -498,6 +498,10 @@ def collect_snapshots():
             base["state"] = st.get("state")
             base["awaiting_input_since"] = st.get("awaiting_input_since")
             base["needs_me"] = (st.get("state") == "waiting")
+            # which hook last set the state, + (for Notifications) whether it was a permission prompt vs an
+            # idle nudge — lets the server promote ONLY genuine blocks to "needs you", not plain Stop/idle.
+            base["last_hook"] = st.get("last_hook")
+            base["notif_kind"] = st.get("notif_kind")
         base["state_age"] = round(now - st["state_mtime"], 1) if st.get("state_mtime") else None
         base["auth_window"] = st.get("auth_window")
         base["auth_used_pct"] = st.get("auth_used_pct")
