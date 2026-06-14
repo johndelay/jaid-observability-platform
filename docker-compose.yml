@@ -46,6 +46,7 @@ services:
       - CC_ACCESS_PIN=${CC_ACCESS_PIN:-}      # set to require a PIN for the UI (unset = open on LAN)
       - CC_INGEST_TOKEN=${CC_INGEST_TOKEN:-}  # set to require X-CC-Token on /ingest from remote watchers
       - CC_UPDATE_URL=${CC_UPDATE_URL:-}      # opt-in self-update check: outbound GET of a public version manifest (zero user data); blank = off
+      - CC_STRICT_NEEDS_ME=${CC_STRICT_NEEDS_ME:-1}  # "needs you" only on a real block (permission/ask); set 0 to surface every finished turn
     extra_hosts:
       - "host.docker.internal:host-gateway"   # so the container can reach the host's Ollama on Linux
     restart: unless-stopped

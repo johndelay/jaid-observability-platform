@@ -2,9 +2,11 @@
 
 > Part of the **JAID** family of tools. _(Package / CLI / container name: `cc-observability`.)_
 
-A phone-glanceable **fuel gauge for Claude Code sessions**: how full the context
-window is and how close you are to auto-compaction — plus best-effort subagent
-activity. Stdlib Python only (no pip deps).
+A phone-glanceable, **self-hosted dashboard for Claude Code sessions**. At its core a **fuel gauge** — how
+full the context window is and how close you are to auto-compaction — that has grown into a multi-scene
+triage tool: cost & rate-limits, a Craft score, an efficiency/MCP-cost coach, local transcript search,
+fleet view across machines, and answer-from-phone. Pure-Python server (two small deps: `numpy` +
+`cryptography`); vanilla-JS UI; no third-party data egress by default. Full map: [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
 
 _Independent project — not affiliated with or endorsed by Anthropic, Google, or any AI vendor whose products it integrates. Product names and trademarks (e.g. "Claude", "Antigravity") belong to their respective owners. Licensed under the MIT License (see LICENSE)._
 
@@ -56,6 +58,11 @@ Either way the app is self-hosted and content-free, makes no third-party calls b
 (your data lives in a volume / `~/.cache`; see `docs/UPGRADE.md`). Back up / move data with the encrypted
 export in the 🧹 Maintenance scene (`docs/DATA_EXPORT.md`).
 
+> **Installing the whole thing (incl. the optional pieces)?** Work through
+> **[`TEMPLATE_INSTALL_CHECKLIST.md`](TEMPLATE_INSTALL_CHECKLIST.md)** — a guided, copy-and-walk-through
+> checklist (your AI agent can drive it). For *what every component is* and *what's default vs opt-in*, see
+> **[`docs/COMPONENTS.md`](docs/COMPONENTS.md)**. Most pieces beyond the dashboard itself are opt-in.
+
 ## Run it (Docker — recommended for servers)
 
 A single small container (python:3.12-alpine) that reads this host's transcripts read-only and serves the
@@ -99,6 +106,29 @@ pointed at it — it POSTs to `/ingest`:
 CC_COLLECTOR_URL=http://<dashboard-host>:8099/ingest CC_HOST=$(hostname) python3 watcher.py
 ```
 
+## In-terminal statusline + state hooks (opt-in, per host)
+
+Two **Claude Code `settings.json`** entries that run inside your terminal. **Neither is installed by default**
+(no installer edits `settings.json`) — wire them per host, or let the `jaid-setup` skill offer to do it.
+
+- **Statusline** (`hooks/cc-statusline.sh`) — prints
+  `● brave-otter · Opus 4.8 · 🟢 34% · 🧠 long context` in your prompt: the session's friendly name+color
+  (matches its dashboard card), the model, **compaction proximity** (`% of window`, 🟢/🟡 "consider /compact"/🔴
+  "⚠ /compact now"), and a quiet `🧠 long context` note once absolute context passes ~120k tokens (the
+  "dumb zone" — quality can soften before the wall). It also feeds the dashboard the **authoritative** window
+  size, cost, rate-limits, and account.
+  ```json
+  "statusLine": { "type": "command", "command": "<repo>/hooks/cc-statusline.sh" }
+  ```
+- **State hooks** (`hooks/cc-state-hook.sh`) — wire to all 7 events (`SessionStart`, `UserPromptSubmit`,
+  `PreToolUse`, `PostToolUse`, `Stop`, `Notification`, `SessionEnd`) as
+  `"command": "<repo>/hooks/cc-state-hook.sh <EventName>"`. Gives **precise** activity state ("needs you" only
+  on a real block — a permission prompt or AskUserQuestion, not every finished turn) and records the **tmux
+  pane** that answer-from-phone needs.
+
+Use the absolute path to your checkout (e.g. `~/git/jaid-observability-platform/hooks/...`). Details +
+exact JSON shape: [`docs/COMPONENTS.md`](docs/COMPONENTS.md) (Layer 3).
+
 ## Config (env)
 
 | Var | Default | Where | Meaning |
@@ -120,8 +150,17 @@ CC_COLLECTOR_URL=http://<dashboard-host>:8099/ingest CC_HOST=$(hostname) python3
 | `CC_ACTIVE_HOURS` | 6 | both | only report sessions touched within this window |
 | `CC_SUBAGENT_RUNNING_SECS` | 30 | both | a subagent file modified within this = "running" |
 | `CC_SUBAGENT_WINDOW` | 900 | both | show subagents active within this many seconds |
+| `CC_RUNTIME` | (docker) | server | set `native` for the no-Docker path |
+| `CC_STRICT_NEEDS_ME` | 1 | server | "needs you" only on a real block (permission/ask); `0` = any finished turn |
+| `CC_CONTENT_PORT` | 8100 | server | loopback-only port for the 🔍 Search index (content firewall) |
+| `CC_EMBED_MODEL` / `CC_OLLAMA_URL` | (unset) | server | enable semantic search via your **local** Ollama |
+| `COACH_ENGINE` | auto | coach worker | in-app coach engine: `auto`/`claude`/`ollama`/`off` |
+| `CC_UPDATE_URL` | (unset) | server | opt-in self-update manifest URL (no user data sent) |
+| `CC_DB_DIR` / `CC_STATE_DIR_HOST` / `CC_EXPORT_DIR_HOST` | `~/.cache/...` | host | relocate data on the host |
 
-> These are all env-tunable today; a future in-app **settings menu** will just write them.
+> This is the **commonly-touched** subset. The code reads ~60 env vars in total (poll intervals, timeouts,
+> caps, staleness windows); the full annotated list is in **[`.env.sample`](.env.sample)** and grouped by
+> component in **[`docs/COMPONENTS.md`](docs/COMPONENTS.md)**. A future in-app **settings menu** will just write them.
 
 ## Testing
 
@@ -182,7 +221,7 @@ docker compose up -d --force-recreate
 
 The responder is a separate, opt-in daemon by design: the watcher is read-only, this is the *write* path.
 
-## Cost history, burn rate & time-to-compact ETA (Sprint 3)
+## Cost history, burn rate & time-to-compact ETA
 
 The collector persists every message's token usage into a small SQLite store (`costing.py` prices it,
 `store.py` keeps it) so the dashboard can show **where your tokens go** and **how long you've got**:
@@ -199,11 +238,16 @@ double-counts — no special-case logic. The DB lives in a writable `/data/db` v
 Docker it defaults under `~/.cache/cc-observability/`.
 
 > Cost is an **estimate** for history/rollups; when the statusline feed is present the dashboard shows
-> Claude's **authoritative** `cost.total_cost_usd` instead (estimates are marked `~`). The estimate runs a
-> few % low on 1M-context sessions because the above-200k price tier isn't modelled yet (the exact Opus 1M
-> numbers aren't in the price table — added when known, rather than guessed).
+> Claude's **authoritative** `cost.total_cost_usd` instead (estimates are marked `~`). There is **no
+> above-200k "long-context" price premium** on current models (verified against the pricing page — Opus,
+> Sonnet, Haiku and the Fable/Mythos tier all bill the full window at the flat rate), so nothing extra is
+> modelled there. Subagent (sidechain) usage **is** counted. Treat all figures as estimates, never billing —
+> reconcile against your vendor's dashboard (see [`TERMS.md`](TERMS.md)).
 
-## Roadmap
+## Status
 
-Phase 1 = this (token gauge MVP). Next: PWA polish, containerize the collector on a
-dedicated server, multi-host watcher rollout, subagent/workflow timeline.
+Well past the original MVP: a multi-scene PWA (see [`docs/COMPONENTS.md`](docs/COMPONENTS.md) for the 14
+scenes), persisted cost/history, Craft score, efficiency + MCP-cost coaching, local transcript search
+(keyword + optional Ollama semantic), multi-host fleet view, answer-from-phone, encrypted export/import, and
+an opt-in self-update check. Self-hosted and content-free throughout. **Deferred (by design):** rollup
+tables and at-rest DB encryption (SQLCipher) — see `docs/CONTENT_PRIVACY.md`.
