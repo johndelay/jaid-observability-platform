@@ -39,6 +39,10 @@ STALE_SECS       = float(os.environ.get("CC_STALE_SECS", "120"))      # no updat
 # A "waiting" session whose last turn finished longer ago than this is an old parked terminal, not
 # "needs me now" → demote it from the NEEDS-YOU hero to idle. Applies to derived + enrichment uniformly.
 WAITING_RECENT_SECS = float(os.environ.get("CC_WAITING_RECENT_SECS", "1800"))   # 30 min
+# "Needs you" = Claude is actually blocked on you (permission Notification or an AskUserQuestion), NOT just
+# that a turn finished (the Stop hook fires "waiting" on every completion). Set CC_STRICT_NEEDS_ME=0 to
+# restore the old behavior where any finished turn surfaces in the hero.
+STRICT_NEEDS_ME  = os.environ.get("CC_STRICT_NEEDS_ME", "1") not in ("0", "false", "False", "")
 EXPIRE_SECS      = float(os.environ.get("CC_EXPIRE_SECS", "21600"))   # 6h -> drop from view
 # P4 fleet reporting-health. A host is GREEN while we've heard from it recently (a session POST, a beacon,
 # or — for the local-scan host — a scan pass), AMBER if it's gone quiet (missed a beat), RED if silent past
@@ -261,10 +265,26 @@ def compute(snap, now):
     age = now - snap.get("reported_at", now)
     stale = age > STALE_SECS
     state = snap.get("state") or "unknown"
+    lm = last_msg(snap.get("activity"))
+    last_hook = snap.get("last_hook")
+    notif_kind = snap.get("notif_kind")
     needs_me = bool(snap.get("needs_me"))
     # recency bound: an old turn-complete terminal is "idle", not "needs me now"
     wait_age = _wait_age_secs(snap.get("awaiting_input_since"), now)
     if needs_me and wait_age is not None and wait_age > WAITING_RECENT_SECS:
+        needs_me = False
+    # "Needs you" must mean Claude is actually BLOCKED on you, not merely that a turn finished. Both the
+    # transcript baseline (the last non-sidechain msg is an `assistant` turn on every completion) and the
+    # Stop hook write "waiting" after EVERY turn — and the Notification hook ALSO fires on a mere idle
+    # "waiting for your input" nudge — so any of those would otherwise dominate the hero. Treat it as
+    # "needs you" only when:
+    #   - a PERMISSION-type Notification fired (notif_kind == "permission"; the hook classifies the message
+    #     so an idle nudge is excluded), or
+    #   - Claude left an explicit AskUserQuestion (last_msg.kind == "ask").
+    # Otherwise demote to idle. (Watcher-only hosts have no hooks → only the explicit-ask signal survives;
+    # they can't observe permission waits anyway.) Tunable off via CC_STRICT_NEEDS_ME=0 for old behavior.
+    blocking = (notif_kind == "permission") or (lm is not None and lm.get("kind") == "ask")
+    if STRICT_NEEDS_ME and needs_me and not blocking:
         needs_me = False
     # effective state for the fleet summary: waiting (needs you) > working (fresh) > idle (stale/quiet)
     if needs_me:
@@ -294,11 +314,13 @@ def compute(snap, now):
         "state": state,
         "eff_state": eff,
         "needs_me": needs_me,
+        "last_hook": last_hook,                       # which hook last set state (Stop/Notification/…); None on watcher-only hosts
+        "notif_kind": notif_kind,                     # "permission" | "idle" | None — why a Notification fired (gates needs_me)
         # answer-from-phone affordance: a tmux target was recorded for this session (answerable) AND a PIN
         # is configured (reply_enabled). The UI shows a reply box only when both are true.
         "answerable": bool(snap.get("answerable")),
         "reply_enabled": bool(ACCESS_PIN),
-        "last_msg": last_msg(snap.get("activity")),
+        "last_msg": lm,
         "awaiting_input_since": snap.get("awaiting_input_since"),
         "sidechain_recent": snap.get("sidechain_recent", 0),
         "mcp_observed": snap.get("mcp_observed") or {},      # observed MCP usage (Slice 1, "MCP tax")

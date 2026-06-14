@@ -39,6 +39,19 @@ case "$HOOK" in
   *) exit 0 ;;
 esac
 
+# The Notification hook fires for TWO reasons: a permission prompt (Claude is genuinely BLOCKED on you)
+# AND an idle "waiting for your input" nudge (just your turn, after ~60s quiet). Classify by the message so
+# the server can promote ONLY permission prompts to "Needs you" (idle nudges + plain Stop = your-turn/idle).
+# Default unknown notifications to "idle" (conservative: avoids the false positives this whole gate fixes).
+notif_kind=""
+if [ "$HOOK" = "Notification" ]; then
+  msg="$(printf '%s' "$JSON" | jq -r '.message // empty' 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+  case "$msg" in
+    *permission*|*"needs your approval"*|*"approve"*) notif_kind="permission" ;;
+    *)                                                notif_kind="idle" ;;
+  esac
+fi
+
 # awaiting_input_since: CLEAR on human-resumed events; SET otherwise (waiting on you)
 case "$HOOK" in
   UserPromptSubmit|PreToolUse|PostToolUse|SessionEnd) await="" ;;
@@ -47,7 +60,7 @@ esac
 
 ts="$(date -u +%FT%TZ)"
 tmp="$(mktemp "$DIR/.$sid.XXXXXX" 2>/dev/null)" || exit 0
-jq -n --arg sid "$sid" --arg st "$state" --arg cwd "$cwd" --arg ts "$ts" --arg hook "$HOOK" --arg aw "$await" \
-  '{session_id:$sid, state:$st, cwd:$cwd, updated_at:$ts, last_hook:$hook, awaiting_input_since:(if $aw=="" then null else $aw end)}' \
+jq -n --arg sid "$sid" --arg st "$state" --arg cwd "$cwd" --arg ts "$ts" --arg hook "$HOOK" --arg aw "$await" --arg nk "$notif_kind" \
+  '{session_id:$sid, state:$st, cwd:$cwd, updated_at:$ts, last_hook:$hook, notif_kind:(if $nk=="" then null else $nk end), awaiting_input_since:(if $aw=="" then null else $aw end)}' \
   > "$tmp" 2>/dev/null && mv -f "$tmp" "$DIR/$sid.state.json"
 exit 0

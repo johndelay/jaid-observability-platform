@@ -294,15 +294,63 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(server.compute({"account": "me@x", "account_approx": True, "reported_at": now}, now)["account_approx"])
 
     def test_needs_me_recency_bound(self):
+        # Isolate the recency bound from the strict-blocking gate by giving both a blocking signal
+        # (a permission Notification) — so the ONLY variable under test is how long ago the wait started.
         now = time.time()
         recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
         old = (datetime.now(timezone.utc) - timedelta(minutes=90)).isoformat()
-        r = server.compute({"needs_me": True, "state": "waiting", "awaiting_input_since": recent, "reported_at": now}, now)
-        o = server.compute({"needs_me": True, "state": "waiting", "awaiting_input_since": old, "reported_at": now}, now)
+        r = server.compute({"needs_me": True, "state": "waiting", "notif_kind": "permission", "awaiting_input_since": recent, "reported_at": now}, now)
+        o = server.compute({"needs_me": True, "state": "waiting", "notif_kind": "permission", "awaiting_input_since": old, "reported_at": now}, now)
         self.assertTrue(r["needs_me"], "recent wait should stay needs-me")
         self.assertEqual(r["eff_state"], "waiting")
         self.assertFalse(o["needs_me"], "old wait should be demoted")
         self.assertEqual(o["eff_state"], "idle")
+
+    def test_needs_me_strict_blocking_gate(self):
+        # "Needs you" must mean Claude is BLOCKED on you, not merely that a turn finished or went idle. The
+        # Stop hook fires "waiting" on every completion AND the Notification hook fires on a mere idle nudge,
+        # so both must be demoted. Only a PERMISSION-classified Notification or an explicit AskUserQuestion
+        # keeps a session in the hero.
+        now = time.time()
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+        # bare turn-completion: Claude just finished talking -> idle, not needs-me
+        stop = server.compute({"needs_me": True, "state": "waiting", "last_hook": "Stop",
+                               "awaiting_input_since": recent, "reported_at": now,
+                               "activity": [{"kind": "text", "text": "all done"}]}, now)
+        self.assertFalse(stop["needs_me"], "a finished turn (Stop, text) is your-turn, not needs-me")
+        self.assertEqual(stop["eff_state"], "idle")
+        # idle "waiting for your input" Notification -> still your-turn, NOT needs-me (the real-world bug)
+        idle = server.compute({"needs_me": True, "state": "waiting", "last_hook": "Notification",
+                               "notif_kind": "idle", "awaiting_input_since": recent, "reported_at": now,
+                               "activity": [{"kind": "text", "text": "here is the summary"}]}, now)
+        self.assertFalse(idle["needs_me"], "an idle-nudge Notification is NOT needs-me")
+        self.assertEqual(idle["eff_state"], "idle")
+        # permission Notification -> blocked on you
+        notif = server.compute({"needs_me": True, "state": "waiting", "last_hook": "Notification",
+                                "notif_kind": "permission", "awaiting_input_since": recent, "reported_at": now,
+                                "activity": [{"kind": "text", "text": "running ls"}]}, now)
+        self.assertTrue(notif["needs_me"], "a permission Notification is needs-me")
+        self.assertEqual(notif["eff_state"], "waiting")
+        # explicit AskUserQuestion -> blocked on you (also the only signal available on watcher-only hosts)
+        ask = server.compute({"needs_me": True, "state": "waiting", "last_hook": "Stop",
+                              "awaiting_input_since": recent, "reported_at": now,
+                              "activity": [{"kind": "ask", "question": "Proceed?", "options": ["yes", "no"]}]}, now)
+        self.assertTrue(ask["needs_me"], "an AskUserQuestion is needs-me")
+        self.assertEqual(ask["eff_state"], "waiting")
+
+    def test_needs_me_strict_gate_can_be_disabled(self):
+        # CC_STRICT_NEEDS_ME=0 restores the old behavior: any finished turn surfaces as needs-me.
+        now = time.time()
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+        orig = server.STRICT_NEEDS_ME
+        try:
+            server.STRICT_NEEDS_ME = False
+            out = server.compute({"needs_me": True, "state": "waiting", "last_hook": "Stop",
+                                  "awaiting_input_since": recent, "reported_at": now,
+                                  "activity": [{"kind": "text", "text": "all done"}]}, now)
+            self.assertTrue(out["needs_me"], "with the strict gate off, a finished turn stays needs-me")
+        finally:
+            server.STRICT_NEEDS_ME = orig
 
     def test_remote_nonauthoritative_state_survives(self):
         # Watcher-only host (no Phase A statusline feed): no auth_window, cost/rate_limits null.
@@ -310,9 +358,12 @@ class ServerTests(unittest.TestCase):
         # Mirrors live my-laptop snapshot (opus-4-6, 189447 ctx → 94.7% of derived 200k window).
         now = time.time()
         recent = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+        # On a watcher-only host there's no Notification hook, so the only blocking signal that can surface
+        # needs-me is an explicit AskUserQuestion in the transcript — give it one to prove triage is alive.
         out = server.compute({
             "host": "my-laptop", "context_tokens": 189447, "model": "claude-opus-4-6",
             "state": "waiting", "needs_me": True, "awaiting_input_since": recent,
+            "activity": [{"kind": "ask", "question": "Proceed?", "options": ["yes", "no"]}],
             "cost_usd": None, "rate_limits": None, "reported_at": now,
         }, now)
         self.assertFalse(out["authoritative"])            # no statusline feed
@@ -320,7 +371,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(out["context_tokens"], 189447)   # real context preserved
         self.assertEqual(out["pct"], 94.7)                # computed from derived window
         self.assertEqual(out["state"], "waiting")
-        self.assertTrue(out["needs_me"])                  # triage ALIVE on watcher-only host
+        self.assertTrue(out["needs_me"])                  # triage ALIVE on watcher-only host (via the ask)
         self.assertEqual(out["eff_state"], "waiting")
         self.assertIsNone(out["cost_usd"])                # known gap: null on watcher-only
         self.assertIsNone(out["rate_limits"])
