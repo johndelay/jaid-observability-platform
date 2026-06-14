@@ -154,9 +154,9 @@
   .row.stale{opacity:.5}
   .row .who{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .row .pct{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;text-align:right}
-  .row .mini-wrap{grid-column:1/-1;position:relative;margin-top:2px}
-  .row .mini{height:6px;border-radius:4px;background:var(--card2);overflow:hidden}
-  .row .mini i{display:block;height:100%;border-radius:4px}
+  .row .mini-wrap,.witem .mini-wrap{grid-column:1/-1;position:relative;margin-top:2px}
+  .row .mini,.witem .mini{height:6px;border-radius:4px;background:var(--card2);overflow:hidden}
+  .row .mini i,.witem .mini i{display:block;height:100%;border-radius:4px}
   /* dumb-zone threshold ticks — thin vertical needles at drift/danger token boundaries on the fill bar.
      padding+background-clip widen the invisible hit area to ~14px without changing the visual 2px line. */
   .dz-tick{position:absolute;top:-3px;width:2px;height:12px;border-radius:1px;opacity:0.65;cursor:default;
@@ -1218,11 +1218,21 @@ function render(list){
     for(const s of needs){
       const perm=(s.state==='waiting'&&s.awaiting_input_since)?'':'';
       const ask=s.last_msg?`<div class="ask">${s.last_msg.kind==='ask'?'❓ ':'💬 '}${esc(s.last_msg.text)}</div>`:'';
+      const wdzTick = (() => {
+        if (!feat.dumbzone || !s.window) return '';
+        const driftPct = (ZONE_TOK.drift / s.window) * 100;
+        if (driftPct >= 100) return '';
+        let out = `<span class="dz-tick" style="left:${driftPct.toFixed(1)}%;background:var(--amber)" data-tip="🟠 Drift – Dumb Zone\n${fmtTok(ZONE_TOK.drift)} accumulated context tokens. Older details may start slipping; plan a /compact at your next clean checkpoint."></span>`;
+        const dangerPct = (ZONE_TOK.danger / s.window) * 100;
+        if (dangerPct < 100) out += `<span class="dz-tick" style="left:${dangerPct.toFixed(1)}%;background:var(--red)" data-tip="🔴 Danger – Dumb Zone\n${fmtTok(ZONE_TOK.danger)} accumulated context tokens. Deep dumb zone; accumulated context may dull responses. /compact or /clear restores focus."></span>`;
+        return out;
+      })();
       html+=`<div class="witem" data-sid="${s.session_id}">
         <div class="who">${badge(s)}</div>
         <div class="wait">${waited(s)}<small>waiting</small></div>
         <div class="sub">${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}${multiAcct&&s.account?' · '+apx(s.account_approx)+esc(acctDisplay(s.account)):''} · ${Math.round(s.pct)}%${s.eta_secs?' · ⏱'+dur(s.eta_secs):''}${s.subagent_running>0?' · ▸'+s.subagent_running:''}</div>
         ${ask}
+        <div class="mini-wrap"><div class="mini"><i style="width:${Math.min(100,s.pct)}%;background:${color(s.pct)}"></i></div>${wdzTick}</div>
       </div>`;
     }
     html+='</section>';
