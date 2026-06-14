@@ -121,6 +121,37 @@ check('hero card shows time-to-compact ETA', () => {
   if (!document.getElementById('app').innerHTML.includes('⏱')) throw new Error('ETA marker missing');
 });
 
+// 3c2) a needs_me session WITHOUT last_msg is NOT hero-promoted (fix B): a bare turn-completion is
+// "your turn" not urgent → it drops to the Sessions list with a waiting pill, hero stays "All clear".
+check('needs_me without last_msg drops out of the hero into the Sessions list', () => {
+  const bare = { ...STATE[1], session_id: 'bare-turn', needs_me: true, eff_state: 'waiting',
+                 state: 'waiting', last_msg: null, awaiting_input_since: '2026-06-04T20:00:00Z' };
+  ctx.render([bare]);
+  const out = document.getElementById('app').innerHTML;
+  if (out.includes('class="needs hot"')) throw new Error('bare turn-completion should NOT make the hot "Needs you" hero');
+  if (!out.includes('needs clear')) throw new Error('hero should be "All clear" when the only waiting session has no last_msg');
+  if (!out.includes('class="row')) throw new Error('the demoted session should render as a normal Sessions row');
+  if (!out.includes('pill waiting')) throw new Error('the demoted session should still show a waiting pill');
+});
+
+// 3c3) a needs_me session WITH last_msg still IS hero-promoted (the legit ask path is unchanged)
+check('needs_me with last_msg still hero-promotes', () => {
+  ctx.render([STATE[0]]);   // STATE[0] is needs_me:true with an ask last_msg
+  const out = document.getElementById('app').innerHTML;
+  if (!out.includes('class="needs hot"')) throw new Error('a waiting session with a question must make the hero');
+  if (!out.includes('class="witem"')) throw new Error('hero witem card missing');
+});
+
+// 3c4) showIdle off still surfaces a demoted-waiting session (it must not vanish with idle sessions)
+check('showIdle off keeps a demoted-waiting session visible', () => {
+  const bare = { ...STATE[1], session_id: 'bare2', needs_me: true, eff_state: 'waiting', state: 'waiting', last_msg: null };
+  ctx.setFeat('showIdle', false);
+  ctx.render([bare]);
+  const out = document.getElementById('app').innerHTML;
+  if (!out.includes('bare2')) throw new Error('demoted-waiting session disappeared when idle sessions were hidden');
+  ctx.setFeat('showIdle', true);
+});
+
 // 3d) burn + today cost chips render from window._cost
 check('summary shows burn + today chips from /cost', () => {
   win._cost = { burn: { cost_per_hour: 1.23 }, daily: [{ day: '2026-06-04', cost_usd: 4.56 }] };
