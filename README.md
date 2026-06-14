@@ -2,9 +2,11 @@
 
 > Part of the **JAID** family of tools. _(Package / CLI / container name: `cc-observability`.)_
 
-A phone-glanceable **fuel gauge for Claude Code sessions**: how full the context
-window is and how close you are to auto-compaction — plus best-effort subagent
-activity. Stdlib Python only (no pip deps).
+A phone-glanceable, **self-hosted dashboard for Claude Code sessions**. At its core a **fuel gauge** — how
+full the context window is and how close you are to auto-compaction — that has grown into a multi-scene
+triage tool: cost & rate-limits, a Craft score, an efficiency/MCP-cost coach, local transcript search,
+fleet view across machines, and answer-from-phone. Pure-Python server (two small deps: `numpy` +
+`cryptography`); vanilla-JS UI; no third-party data egress by default. Full map: [`docs/COMPONENTS.md`](docs/COMPONENTS.md).
 
 _Independent project — not affiliated with or endorsed by Anthropic, Google, or any AI vendor whose products it integrates. Product names and trademarks (e.g. "Claude", "Antigravity") belong to their respective owners. Licensed under the MIT License (see LICENSE)._
 
@@ -219,7 +221,7 @@ docker compose up -d --force-recreate
 
 The responder is a separate, opt-in daemon by design: the watcher is read-only, this is the *write* path.
 
-## Cost history, burn rate & time-to-compact ETA (Sprint 3)
+## Cost history, burn rate & time-to-compact ETA
 
 The collector persists every message's token usage into a small SQLite store (`costing.py` prices it,
 `store.py` keeps it) so the dashboard can show **where your tokens go** and **how long you've got**:
@@ -236,11 +238,16 @@ double-counts — no special-case logic. The DB lives in a writable `/data/db` v
 Docker it defaults under `~/.cache/cc-observability/`.
 
 > Cost is an **estimate** for history/rollups; when the statusline feed is present the dashboard shows
-> Claude's **authoritative** `cost.total_cost_usd` instead (estimates are marked `~`). The estimate runs a
-> few % low on 1M-context sessions because the above-200k price tier isn't modelled yet (the exact Opus 1M
-> numbers aren't in the price table — added when known, rather than guessed).
+> Claude's **authoritative** `cost.total_cost_usd` instead (estimates are marked `~`). There is **no
+> above-200k "long-context" price premium** on current models (verified against the pricing page — Opus,
+> Sonnet, Haiku and the Fable/Mythos tier all bill the full window at the flat rate), so nothing extra is
+> modelled there. Subagent (sidechain) usage **is** counted. Treat all figures as estimates, never billing —
+> reconcile against your vendor's dashboard (see [`TERMS.md`](TERMS.md)).
 
-## Roadmap
+## Status
 
-Phase 1 = this (token gauge MVP). Next: PWA polish, containerize the collector on a
-dedicated server, multi-host watcher rollout, subagent/workflow timeline.
+Well past the original MVP: a multi-scene PWA (see [`docs/COMPONENTS.md`](docs/COMPONENTS.md) for the 14
+scenes), persisted cost/history, Craft score, efficiency + MCP-cost coaching, local transcript search
+(keyword + optional Ollama semantic), multi-host fleet view, answer-from-phone, encrypted export/import, and
+an opt-in self-update check. Self-hosted and content-free throughout. **Deferred (by design):** rollup
+tables and at-rest DB encryption (SQLCipher) — see `docs/CONTENT_PRIVACY.md`.
