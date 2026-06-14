@@ -129,6 +129,12 @@ Two **Claude Code `settings.json`** entries that run inside your terminal. **Nei
 Use the absolute path to your checkout (e.g. `~/git/jaid-observability-platform/hooks/...`). Details +
 exact JSON shape: [`docs/COMPONENTS.md`](docs/COMPONENTS.md) (Layer 3).
 
+> **Advisory:** the "dumb zone" is a **heuristic, not an Anthropic-defined threshold** — it is not documented
+> or acknowledged by Anthropic. It's grounded in public long-context research (effective context is a
+> fraction of the window; quality erodes *continuously*, well before the wall — Liu 2023, RULER 2024, NoLiMa
+> 2025, Chroma 2025), and is a soft gradient, not a cliff. Sources + the full consensus:
+> [`docs/COMPONENTS.md` → Advisory](docs/COMPONENTS.md#advisory--the-dumb-zone-is-a-heuristic-not-an-anthropic-defined-threshold).
+
 ## Config (env)
 
 | Var | Default | Where | Meaning |
