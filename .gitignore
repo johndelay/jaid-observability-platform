@@ -8,3 +8,6 @@ logs/
 node_modules/
 tests/artifacts/
 .claude/settings.local.json
+
+# per-install working copy of TEMPLATE_INSTALL_CHECKLIST.md (the agent fills this in locally)
+install-checklist.local.md

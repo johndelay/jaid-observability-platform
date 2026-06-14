@@ -58,13 +58,29 @@ directly (no Docker, so no dual-port firewall needed). Data lives under `~/.cach
    - **Windows:** create a Task Scheduler task (at-logon) running `.venv\Scripts\cc-observability.exe`, or
      instruct the user to run it in a terminal. Set env vars from `.env`.
 
-5. **Verify.** Hit `http://localhost:8099/health` → expect JSON `{"ok":true,"version":"...","runtime":"native"}`.
+5. **Offer the in-terminal gauge — statusline + state hooks (recommended; ASK FIRST).** These aren't installed
+   by the steps above; they're Claude Code `settings.json` entries that give the
+   `● name · model · 🟢 34% · 🧠 long context` status line **and** feed the dashboard authoritative
+   window/cost/rate-limits + precise "needs you" state + the tmux pane for answer-from-phone. **Editing
+   `settings.json` is a change to the user's environment — explain what it does and get a yes before
+   touching it.** If they accept:
+   - **Back up** `~/.claude/settings.json` first (e.g. `…json.bak-<date>`).
+   - Add `"statusLine": { "type": "command", "command": "<abs-repo>/hooks/cc-statusline.sh" }`.
+   - Add `<abs-repo>/hooks/cc-state-hook.sh <Event>` to all 7 events: `SessionStart`, `UserPromptSubmit`,
+     `PreToolUse`, `PostToolUse`, `Stop`, `Notification`, `SessionEnd` (append to existing hook arrays — don't
+     clobber). Use the **absolute path to this checkout**.
+   - Validate the JSON, then tell the user to start a **new** session to see the status line.
+   - If they decline, skip it — the dashboard still works (it derives best-effort state from transcripts).
+   Full detail: `docs/COMPONENTS.md` (Layer 3).
+
+6. **Verify.** Hit `http://localhost:8099/health` → expect JSON `{"ok":true,"version":"...","runtime":"native"}`.
    Then open the UI, log in with the PIN, and confirm the Triage scene loads. If search is wanted, enable it in
    the 🔍 Search scene (it's local-only and opt-in).
 
-6. **Report** the URL, the PIN, the service name (so they can `systemctl --user restart` etc.), and where data +
-   exports live. Point them at `docs/DATA_EXPORT.md` (backup) and `docs/UPGRADE.md` (upgrades: `git pull` +
-   restart the service; data survives because it's under `~/.cache`).
+7. **Report** the URL, the PIN, the service name (so they can `systemctl --user restart` etc.), whether the
+   statusline/hooks were wired, and where data + exports live. Point them at `TEMPLATE_INSTALL_CHECKLIST.md`
+   for the optional pieces (answer-from-phone, coach, fleet), `docs/COMPONENTS.md` (what each component is),
+   `docs/DATA_EXPORT.md` (backup), and `docs/UPGRADE.md` (upgrades: `git pull` + restart; data survives).
 
 ## Guardrails
 - Don't install services without confirming. Don't overwrite an existing `.env`. Never put secrets in the repo
