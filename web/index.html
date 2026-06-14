@@ -157,8 +157,18 @@
   .row .mini-wrap{grid-column:1/-1;position:relative;margin-top:2px}
   .row .mini{height:6px;border-radius:4px;background:var(--card2);overflow:hidden}
   .row .mini i{display:block;height:100%;border-radius:4px}
-  /* dumb-zone threshold ticks — thin vertical needles at drift/danger token boundaries on the fill bar */
-  .dz-tick{position:absolute;top:-3px;width:2px;height:12px;border-radius:1px;pointer-events:none;opacity:0.65}
+  /* dumb-zone threshold ticks — thin vertical needles at drift/danger token boundaries on the fill bar.
+     padding+background-clip widen the invisible hit area to ~14px without changing the visual 2px line. */
+  .dz-tick{position:absolute;top:-3px;width:2px;height:12px;border-radius:1px;opacity:0.65;cursor:default;
+    padding:0 6px;margin-left:-6px;background-clip:content-box;box-sizing:content-box}
+  .dz-tick::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);left:50%;
+    transform:translateX(-50%);background:var(--card2);color:var(--txt);border:1px solid var(--line);
+    border-radius:7px;padding:5px 9px;font-size:11px;line-height:1.5;max-width:190px;white-space:normal;
+    pointer-events:none;opacity:0;transition:opacity .15s;z-index:50;text-align:left;font-weight:400;
+    box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  .dz-tick::before{content:'';position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);
+    border:5px solid transparent;border-top-color:var(--line);pointer-events:none;opacity:0;transition:opacity .15s;z-index:51}
+  .dz-tick:hover::after,.dz-tick:hover::before{opacity:1}
   /* dumb-zone clarity pip: SOFT, separate from the compaction bar. The dot fills clockwise (conic) with
      the clarity hue; remainder faint. Deliberately small + muted — a heads-up, never an alarm. */
   .dz-pip{display:inline-flex;align-items:center;gap:3px;margin-left:6px;vertical-align:middle;
@@ -1254,9 +1264,9 @@ function render(list){
         if (!dz || !s.window) return '';
         const driftPct = (ZONE_TOK.drift / s.window) * 100;
         if (driftPct >= 100) return '';
-        let out = `<span class="dz-tick" style="left:${driftPct.toFixed(1)}%;background:var(--amber)" title="Dumb-zone drift · ${fmtTok(ZONE_TOK.drift)} accumulated context tokens"></span>`;
+        let out = `<span class="dz-tick" style="left:${driftPct.toFixed(1)}%;background:var(--amber)" data-tip="🟠 Drift zone — ${fmtTok(ZONE_TOK.drift)} accumulated context tokens. Older details may start slipping; plan a /compact at your next clean checkpoint."></span>`;
         const dangerPct = (ZONE_TOK.danger / s.window) * 100;
-        if (dangerPct < 100) out += `<span class="dz-tick" style="left:${dangerPct.toFixed(1)}%;background:var(--red)" title="Dumb-zone danger · ${fmtTok(ZONE_TOK.danger)} accumulated context tokens"></span>`;
+        if (dangerPct < 100) out += `<span class="dz-tick" style="left:${dangerPct.toFixed(1)}%;background:var(--red)" data-tip="🔴 Danger zone — ${fmtTok(ZONE_TOK.danger)} accumulated context tokens. Deep dumb zone; accumulated context may dull responses. /compact or /clear restores focus."></span>`;
         return out;
       })();
       html+=`<div class="row ${s.stale?'stale':''}" data-sid="${s.session_id}">

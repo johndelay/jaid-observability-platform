@@ -525,10 +525,12 @@ check('dz-tick markers on fill bar by window size', () => {
   const h1m = document.getElementById('app').innerHTML;
   if (!h1m.includes('dz-tick')) throw new Error('dz-tick missing on 1M session');
   if ((h1m.match(/class="dz-tick"/g)||[]).length < 2) throw new Error('expected 2 dz-tick marks on 1M session (drift + danger)');
+  if (!h1m.includes('data-tip=')) throw new Error('dz-tick missing data-tip tooltip on 1M session');
   ctx.render([{ ...STATE[1], session_id: 'tick200k', eff_state: 'working', needs_me: false, pct: 30, context_tokens: 80000 }]);
   const h200k = document.getElementById('app').innerHTML;
   if (!h200k.includes('dz-tick')) throw new Error('dz-tick missing on 200k session');
   if ((h200k.match(/class="dz-tick"/g)||[]).length !== 1) throw new Error('expected exactly 1 dz-tick on 200k session (danger off bar)');
+  if (!h200k.includes('data-tip=')) throw new Error('dz-tick missing data-tip tooltip on 200k session');
 });
 
 // 9k) dumbzone toggle OFF → no zone chip/banner/ticks (falls back to the plain number)
