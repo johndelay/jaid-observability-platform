@@ -1198,10 +1198,16 @@ function render(list){
   if(accountFilter) list=list.filter(s=>s.account===accountFilter);   // top-bar account filter
   list=list.filter(s=>!s.hidden);                                     // archived sessions live in the Archive scene
   if(!list.length){app.innerHTML=accountFilter?'<div class="empty">No sessions for this account.<br>Tap “All” at the top to clear the filter.</div>':'<div class="empty">No active sessions.</div>';paintSuggestDock();return;}
-  const needs=list.filter(s=>s.needs_me);
-  const others=list.filter(s=>!s.needs_me);
+  // A session is hero-worthy ("Needs you") only if it's waiting AND Claude actually left something to
+  // read/answer (last_msg = its final text or an AskUserQuestion). A bare turn-completion — the Stop hook
+  // fires on EVERY finished turn, and the transcript always ends on an assistant message — has no last_msg
+  // and is just "your turn," not urgent. Those drop to the normal Sessions list with a waiting pill instead
+  // of dominating the hero. (Fixes: every completed turn landing in "Needs you" even with no question.)
+  const heroWorthy=s=>s.needs_me&&s.last_msg;
+  const needs=list.filter(heroWorthy);
+  const others=list.filter(s=>!heroWorthy(s));
 
-  // alert on NEW waiting session (not on first paint)
+  // alert on NEW waiting session (not on first paint) — only the hero-worthy ones beep/flash
   const nowSet=new Set(needs.map(s=>s.session_id));
   if(!first){for(const id of nowSet){if(!prevNeeds.has(id)){if(feat.flash)flash();if(!muted)beep();break;}}}
   prevNeeds=nowSet; first=false;
@@ -1257,8 +1263,8 @@ function render(list){
   </div>`;
   // (per-account spend + plan rate-limits moved to the Cost & Accounts scene — see renderCost())
 
-  // other sessions
-  const shown = feat.showIdle ? others : others.filter(s=>s.eff_state==='working');
+  // other sessions — keep working AND demoted-waiting ("your turn") sessions visible even when idle hidden
+  const shown = feat.showIdle ? others : others.filter(s=>s.eff_state==='working'||s.eff_state==='waiting');
   if(shown.length){
     const hidden=others.length-shown.length;
     html+='<div class="sect">Sessions'+(hidden>0?` <span class="muted" style="font-weight:400">· ${hidden} idle hidden</span>`:'')+'</div>';
