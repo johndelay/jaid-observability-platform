@@ -184,15 +184,21 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
       return { left: Math.round(b.left), label: (document.getElementById('navlabel') || {}).textContent || '' };
     }, sceneIdx);
     const triage = await measure(0);                 // "TRIAGE …" (short)
-    const longLbl = await measure(7);                // "ABOUT / HELP …" (longest visible scene)
-    if (triage.label === longLbl.label) throw new Error('scene label did not change between scenes 0 and 7 — test invalid');
+    const longLbl = await measure(6);                // "ABOUT / HELP …" (longest visible scene)
+    if (triage.label === longLbl.label) throw new Error('scene label did not change between scenes 0 and 6 — test invalid');
     if (Math.abs(triage.left - longLbl.left) > 1)
       throw new Error(`► button moved ${Math.abs(triage.left - longLbl.left)}px when label changed ("${triage.label}" left=${triage.left} vs "${longLbl.label}" left=${longLbl.left}) — layout shift not fixed`);
     await page.evaluate(() => window.goScene && window.goScene(0)); // restore
   });
 
+  await check('Fleet is the last carousel scene', async () => {
+    // goScene clamps to the last visible scene; Search is opt-in OFF, so the last visible scene should be Fleet.
+    const label = await page.evaluate(() => { window.goScene && window.goScene(999); return (document.getElementById('navlabel') || {}).textContent || ''; });
+    if (!/Fleet/.test(label)) throw new Error('expected Fleet to be the last carousel scene; navlabel="' + label + '"');
+  });
+
   await check('carousel transport: Cost + Reports + Coach-hub + MCP + Fleet + Maintenance + About/Help reachable & populated', async () => {
-    // visible swipe order (Search is opt-in OFF): 0 Triage, 1 Cost, 2 Reports, 3 Coach hub, 4 MCP, 5 Fleet, 6 Maintenance, 7 About/Help
+    // visible swipe order (Search is opt-in OFF): 0 Triage, 1 Cost, 2 Reports, 3 Coach hub, 4 MCP, 5 Maintenance, 6 About/Help, 7 Fleet
     await page.evaluate(() => window.goScene && window.goScene(1));
     await page.waitForFunction(() => {
       const t = document.getElementById('track'), cost = document.getElementById('scene-cost');
@@ -219,18 +225,18 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     }, undefined, { timeout: 4000, polling: 100 });
     await page.evaluate(() => window.goScene && window.goScene(5));
     await page.waitForFunction(() => {
-      const fleet = document.getElementById('scene-fleet');
-      return fleet && /Fleet/.test(fleet.innerHTML) && !/Loading fleet/.test(fleet.innerHTML);
-    }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(6));
-    await page.waitForFunction(() => {
       const mt = document.getElementById('scene-maint');
       return mt && /Maintenance/.test(mt.innerHTML) && /Storage/.test(mt.innerHTML) && !/Loading maintenance/.test(mt.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(7));
+    await page.evaluate(() => window.goScene && window.goScene(6));
     await page.waitForFunction(() => {
       const help = document.getElementById('scene-help'), ab = document.getElementById('scene-about');
       return help && help.textContent.includes('context window') && ab && /About/.test(ab.innerHTML) && !/Loading/.test(ab.innerHTML);
+    }, undefined, { timeout: 4000, polling: 100 });
+    await page.evaluate(() => window.goScene && window.goScene(7));   // Fleet is now the very last scene
+    await page.waitForFunction(() => {
+      const fleet = document.getElementById('scene-fleet');
+      return fleet && /Fleet/.test(fleet.innerHTML) && !/Loading fleet/.test(fleet.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
     await page.evaluate(() => window.goScene && window.goScene(0)); // back to Triage for the screenshot
   });
