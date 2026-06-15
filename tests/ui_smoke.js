@@ -993,6 +993,14 @@ check('mcpChips renders observed MCP usage sorted busiest-first with error flag'
   if (!out.includes('2 tools')) throw new Error('multi-tool count missing');
 });
 
+// 9m2) attribute-context XSS regression: esc() must encode quotes so a hostile MCP server name (or any
+// untrusted string) interpolated into title="..." can't break out and inject an event handler.
+check('mcpChips: hostile server name cannot break out of the title attribute (esc escapes quotes)', () => {
+  const out = ctx.mcpChips({ 'x" onmouseover="alert(1)': { tools: ['t'], calls: 1, errors: 0 } });
+  if (/onmouseover="/.test(out)) throw new Error('attribute-context XSS: raw quote+handler broke out of the title attribute');
+  if (!out.includes('&quot;')) throw new Error('esc() must HTML-encode the double-quote (&quot;)');
+});
+
 // 9n) renderMcp (MCP tax Slice 2): per-host configured-vs-used, dead-weight, no-live-session caveat, setup card
 check('renderMcp renders configured/used/dead servers + setup card + empty state', () => {
   if (typeof ctx.renderMcp !== 'function') throw new Error('renderMcp() not defined');

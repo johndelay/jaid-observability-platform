@@ -102,6 +102,40 @@ _content = None        # V9 content search index (cc-content.db); set up in main
 _hosts = {}            # host -> {last_post_ok_at, source}; per-host reporting-health rollup (P4)
 _rejected = {}         # source_ip -> {count, last_at}; auth-rejected /ingest POSTs (misconfigured watcher)
 
+# ---- /login brute-force throttle (the PIN is a single low-entropy secret on a LAN-reachable port; without
+# this a 4-digit PIN falls in seconds). Per-IP failed-attempt counter → temporary lockout. -------------------
+LOGIN_MAX_FAILS = int(os.environ.get("CC_LOGIN_MAX_FAILS", "10"))   # fails within the window → lockout
+LOGIN_WINDOW    = float(os.environ.get("CC_LOGIN_WINDOW", "300"))   # rolling window (s) for counting fails
+LOGIN_BLOCK     = float(os.environ.get("CC_LOGIN_BLOCK", "300"))    # lockout duration (s) once tripped
+_login_fails = {}                      # client_ip -> {count, first_at, blocked_until}
+_login_lock = threading.Lock()
+
+def _login_blocked_for(ip):
+    """Seconds remaining if this IP is currently locked out, else 0."""
+    now = time.time()
+    with _login_lock:
+        rec = _login_fails.get(ip)
+        if rec and rec.get("blocked_until", 0) > now:
+            return rec["blocked_until"] - now
+    return 0
+
+def _login_note_fail(ip):
+    now = time.time()
+    with _login_lock:
+        if len(_login_fails) > 4096:     # bound memory against spoofed-IP floods
+            _login_fails.clear()
+        rec = _login_fails.get(ip)
+        if not rec or now - rec.get("first_at", 0) > LOGIN_WINDOW:
+            rec = {"count": 0, "first_at": now, "blocked_until": 0}
+        rec["count"] += 1
+        if rec["count"] >= LOGIN_MAX_FAILS:
+            rec["blocked_until"] = now + LOGIN_BLOCK
+        _login_fails[ip] = rec
+
+def _login_note_ok(ip):
+    with _login_lock:
+        _login_fails.pop(ip, None)
+
 # ---- answer-from-phone reply queue (the write path) --------------------------
 _outbox = {}                          # reply_id -> {host, session_id, text, status, result, created}
 _outbox_cond = threading.Condition()  # guards _outbox; wakes long-pollers on both ends
@@ -441,11 +475,21 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # quiet
         pass
 
+    def _sec_headers(self):
+        # Defensive headers on every response: block framing (clickjacking), MIME-sniffing, and referrer
+        # leakage. CSP is frame-ancestors only — we deliberately don't restrict script/style-src because the
+        # UI is a single inline <script>/<style> bundle (a 'unsafe-inline' CSP would add no real protection).
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+
     def _send_json(self, obj, code=200):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self._sec_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -1203,15 +1247,19 @@ class Handler(BaseHTTPRequestHandler):
         import portable
         data = body.get("data")
         if data is None and body.get("path"):
-            p = body["path"]
-            if not os.path.isabs(p) or not os.path.exists(p):
-                self._send_json({"ok": False, "reason": "bad_path"}, 400)
+            # Confine the path to EXPORT_DIR (realpath prefix) — never let /import open an arbitrary file,
+            # which would be a file-read / decrypt-oracle over the whole container FS (e.g. /proc/self/environ).
+            base = os.path.realpath(EXPORT_DIR)
+            rp = os.path.realpath(body["path"])
+            if not (rp == base or rp.startswith(base + os.sep)) or not os.path.isfile(rp):
+                self._send_json({"ok": False, "reason": "bad_path",
+                                 "detail": f"path must be a file under {EXPORT_DIR}"}, 400)
                 return
             try:
-                with open(p, "rb") as f:
+                with open(rp, "rb") as f:
                     data = portable.load_export(f.read(), passphrase=body.get("passphrase"))
-            except Exception as e:  # noqa: BLE001
-                self._send_json({"ok": False, "reason": "load_failed", "detail": str(e)[:200]}, 400)
+            except Exception:  # noqa: BLE001 — generic reason only (no str(e) echo → no content/type oracle)
+                self._send_json({"ok": False, "reason": "load_failed"}, 400)
                 return
         if not isinstance(data, dict):
             self._send_json({"ok": False, "reason": "no_data"}, 400)
@@ -1288,6 +1336,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200 if not error else 401)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self._sec_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -1379,18 +1428,27 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?")[0]
         if path == "/login":
+            ip = self.client_address[0] if self.client_address else "?"
+            blocked = _login_blocked_for(ip)
+            if blocked:
+                self._send_json({"ok": False, "reason": "locked_out",
+                                 "detail": f"too many attempts; retry in {int(blocked)}s"}, 429)
+                return
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 pin = (parse_qs(self.rfile.read(n).decode("utf-8", "replace")).get("pin") or [""])[0]
             except (ValueError, TypeError):
                 pin = ""
             if ACCESS_PIN and hmac.compare_digest(pin, ACCESS_PIN):
+                _login_note_ok(ip)
                 self.send_response(302)
                 self.send_header("Location", "/")
                 self.send_header("Set-Cookie", f"cc_auth={AUTH_COOKIE}; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax")
                 self.send_header("Content-Length", "0")
                 self.end_headers()
             else:
+                _login_note_fail(ip)
+                time.sleep(0.5)              # slow scripted guessing even before the lockout trips
                 self._login_page(error=True)
             return
         if path == "/reply":
@@ -1473,6 +1531,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(body)))
+        self._sec_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -1486,6 +1545,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self._sec_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -1681,6 +1741,14 @@ def maintenance_loop():
 
 def main():
     global _store, _content
+    # Misconfig guard: equal ports would collapse the content firewall onto the LAN listener (the
+    # local-only check is `bound_port == CONTENT_PORT`, which would then be true for 0.0.0.0:PORT too).
+    if PORT == CONTENT_PORT:
+        raise SystemExit(f"[fatal] CC_PORT ({PORT}) must differ from CC_CONTENT_PORT ({CONTENT_PORT}) — "
+                         "equal ports would expose raw transcript search on the LAN. Aborting.")
+    if ACCESS_PIN and len(ACCESS_PIN) < 8:
+        print(f"[security] CC_ACCESS_PIN is short ({len(ACCESS_PIN)} chars) — it gates /reply (shell inject) "
+              "on a LAN port. Use a long, non-numeric PIN/passphrase.", flush=True)
     try:
         import store as _store_mod
         import portable

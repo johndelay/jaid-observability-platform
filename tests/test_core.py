@@ -1460,6 +1460,83 @@ class PrefEndpointTests(unittest.TestCase):
         self.assertEqual(len(resp["overall"]["bands"]), 4)          # sharp/good/drift/danger always present
 
 
+class SecurityHardeningTests(unittest.TestCase):
+    """Security review batch 1: /login brute-force throttle (#2) + /import path confinement (#3),
+    exercised over a REAL HTTP server with a PIN set (the cross-boundary cases unit tests can't catch)."""
+    def setUp(self):
+        import hashlib, hmac as _hmac, threading
+        from http.server import ThreadingHTTPServer
+        self.dir = tempfile.mkdtemp()
+        self.exportdir = os.path.join(self.dir, "exports"); os.makedirs(self.exportdir)
+        self._store = store.Store(os.path.join(self.dir, "u.db"))
+        self._orig = (server._store, server.ACCESS_PIN, server.AUTH_COOKIE, server.EXPORT_DIR,
+                      server.LOGIN_MAX_FAILS)
+        server._store = self._store
+        server.ACCESS_PIN = "supersecretpassphrase"
+        server.AUTH_COOKIE = _hmac.new(server.ACCESS_PIN.encode(), b"cc-observability-v1",
+                                       hashlib.sha256).hexdigest()
+        server.EXPORT_DIR = self.exportdir
+        server.LOGIN_MAX_FAILS = 3
+        with server._login_lock:
+            server._login_fails.clear()
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        self.port = self.httpd.server_address[1]
+        self.httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+        self._t = threading.Thread(target=self.httpd.serve_forever, daemon=True); self._t.start()
+
+    def tearDown(self):
+        self.httpd.shutdown(); self.httpd.server_close()
+        (server._store, server.ACCESS_PIN, server.AUTH_COOKIE, server.EXPORT_DIR,
+         server.LOGIN_MAX_FAILS) = self._orig
+        with server._login_lock:
+            server._login_fails.clear()
+        self._store.close(); shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _login(self, pin):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("POST", "/login", "pin=" + pin, {"Content-Type": "application/x-www-form-urlencoded"})
+        r = c.getresponse(); r.read(); c.close()
+        return r.status
+
+    def _import(self, body):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("POST", "/import", json.dumps(body),
+                  {"Content-Type": "application/json", "Cookie": "cc_auth=" + server.AUTH_COOKIE})
+        r = c.getresponse(); data = r.read(); c.close()
+        return r.status, (json.loads(data) if data else None)
+
+    def test_login_throttle_locks_out_after_max_fails(self):
+        for _ in range(server.LOGIN_MAX_FAILS):
+            self.assertEqual(self._login("wrong"), 401)            # wrong PIN → login page (401)
+        self.assertEqual(self._login("wrong"), 429)                # tripped → locked out
+        self.assertEqual(self._login(server.ACCESS_PIN), 429)      # even the CORRECT PIN is locked out now
+
+    def test_login_success_clears_throttle(self):
+        self.assertEqual(self._login("wrong"), 401)
+        self.assertEqual(self._login(server.ACCESS_PIN), 302)      # correct PIN → redirect to /
+        with server._login_lock:
+            self.assertNotIn("127.0.0.1", server._login_fails)     # success resets the per-IP counter
+
+    def test_import_rejects_path_outside_export_dir(self):
+        st, resp = self._import({"path": "/etc/passwd"})
+        self.assertEqual(st, 400)
+        self.assertEqual(resp["reason"], "bad_path")               # arbitrary abs path refused, never opened
+        st2, resp2 = self._import({"path": os.path.join(self.exportdir, "..", "..", "etc", "passwd")})
+        self.assertEqual(st2, 400)
+        self.assertEqual(resp2["reason"], "bad_path")              # ../ traversal out of EXPORT_DIR blocked
+
+    def test_import_load_failed_is_generic_no_oracle(self):
+        p = os.path.join(self.exportdir, "junk.bin")
+        with open(p, "wb") as f:
+            f.write(b"not a valid bundle")
+        st, resp = self._import({"path": p})                       # in-dir but bogus → generic failure
+        self.assertEqual(st, 400)
+        self.assertEqual(resp["reason"], "load_failed")
+        self.assertNotIn("detail", resp)                           # NO str(e) echo → no content/type oracle
+
+
 class CraftScoreTests(unittest.TestCase):
     """Pure scoring formula (craft.py) — no DB. The policy lives in one place, so test it directly."""
     def test_efficiency_is_cache_ratio_scaled(self):
