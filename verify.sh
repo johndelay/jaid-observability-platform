@@ -44,15 +44,20 @@ if CC_RUNTIME=native python3 -c "import server; assert server.RUNTIME=='native' 
 if python3 -c "import sys; t=__import__('tomllib') if sys.version_info>=(3,11) else None; t and t.load(open('pyproject.toml','rb'))" 2>/dev/null; then
   echo "  PASS pyproject.toml parses"; else echo "  (skip pyproject parse — py<3.11)"; fi
 
-sec "Statusline coaching (V6.1 — compaction vs dumb zone decoupled)"
-# The "/compact now" cue must key off WINDOW PROXIMITY (%), NOT absolute tokens. So 25% of a 1M window
-# (=250k abs tokens — large context, far from the wall) must NOT say "/compact now"; it gets the QUIET
-# "🧠 long context" note instead. Only a high-% fill earns the cue. A small/sharp fill stays silent.
+sec "Statusline coaching (compaction proximity vs the dumb-zone RANGE 🟡→🟠→🔴)"
+# Two decoupled signals. (1) The "/compact now" cue keys off WINDOW PROXIMITY (%), NOT absolute tokens — so
+# 25% of a 1M window (=250k abs, far from the wall) must NOT say "/compact now". (2) The 🧠 dumb-zone note
+# keys off ABSOLUTE tokens and escalates by band: 🟡 long context (>=50k) -> 🟠 drifting (>=120k) -> 🔴 deep
+# (>=200k). So 250k abs = the deep band. A small/sharp fill (<50k) stays silent on both.
 SL_BIGABS=$(printf '{"session_id":"vrfy","context_window":{"context_window_size":1000000,"used_percentage":25}}' | bash hooks/cc-statusline.sh | sed 's/\x1b\[[0-9;]*m//g')
 SL_WALL=$(printf  '{"session_id":"vrfy","context_window":{"context_window_size":1000000,"used_percentage":90}}' | bash hooks/cc-statusline.sh | sed 's/\x1b\[[0-9;]*m//g')
 SL_SHARP=$(printf '{"session_id":"vrfy","context_window":{"context_window_size":1000000,"used_percentage":3}}'  | bash hooks/cc-statusline.sh | sed 's/\x1b\[[0-9;]*m//g')
+SL_YEL=$(printf   '{"session_id":"vrfy","context_window":{"context_window_size":200000,"used_percentage":30}}'  | bash hooks/cc-statusline.sh | sed 's/\x1b\[[0-9;]*m//g')
+SL_ORG=$(printf   '{"session_id":"vrfy","context_window":{"context_window_size":200000,"used_percentage":75}}'  | bash hooks/cc-statusline.sh | sed 's/\x1b\[[0-9;]*m//g')
 case "$SL_BIGABS" in *"/compact now"*) echo "  FAIL 25%-of-1M must NOT nag '/compact now' (far from wall): $SL_BIGABS"; FAIL=$((FAIL+1));; *) echo "  PASS 25%-of-1M does not falsely say '/compact now'";; esac
-case "$SL_BIGABS" in *"🧠 long context"*) echo "  PASS 25%-of-1M shows the quiet '🧠 long context' note";; *) echo "  FAIL dumb-zone note missing on large abs context: $SL_BIGABS"; FAIL=$((FAIL+1));; esac
+case "$SL_BIGABS" in *"🧠 deep context"*) echo "  PASS 250k abs shows the deep '🧠 deep context' note";; *) echo "  FAIL deep dumb-zone note missing on 250k abs: $SL_BIGABS"; FAIL=$((FAIL+1));; esac
+case "$SL_YEL"    in *"🧠 long context"*) echo "  PASS 60k abs shows the yellow '🧠 long context' note";; *) echo "  FAIL yellow dumb-zone note missing on 60k abs: $SL_YEL"; FAIL=$((FAIL+1));; esac
+case "$SL_ORG"    in *"🧠 drifting"*) echo "  PASS 150k abs shows the orange '🧠 drifting' note";; *) echo "  FAIL orange dumb-zone note missing on 150k abs: $SL_ORG"; FAIL=$((FAIL+1));; esac
 case "$SL_WALL"   in *"/compact now"*) echo "  PASS 90% (near the wall) shows '/compact now' cue";; *) echo "  FAIL wall cue missing at 90%: $SL_WALL"; FAIL=$((FAIL+1));; esac
 case "$SL_SHARP"  in *"/compact"*|*"🧠"*) echo "  FAIL sharp fill should stay quiet: $SL_SHARP"; FAIL=$((FAIL+1));; *) echo "  PASS sharp fill stays quiet (no cue, no note)";; esac
 

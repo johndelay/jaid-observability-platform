@@ -21,7 +21,7 @@
   :root{
     --bg:#1a1a2e; --card:#16213e; --card2:#1f2b4d; --txt:#eaf0fb;
     --muted:#8b9bc4; --line:#2a3a5c;
-    --green:#00ff88; --amber:#f7931e; --red:#ff3366; --blue:#00d9ff;
+    --green:#00ff88; --yellow:#f5d020; --amber:#f7931e; --orange:#ff8c2b; --red:#ff3366; --blue:#00d9ff;
     --primary:#ff6b35; --secondary:#f7931e; --accent:#00d9ff;
     --font-display:"Eurostile","Bahnschrift","DIN Condensed","Oswald",
       ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -407,8 +407,9 @@
     border:1px solid var(--line);background:var(--card2)}
   .zone .zl{font-family:var(--font-display);font-size:13px;font-weight:800;letter-spacing:.5px}
   .zone .za{font-size:12px;color:var(--muted)}
-  .zone.z-sharp,.zone.z-good{border-color:rgba(0,255,136,.4)}  .zone.z-sharp .zl,.zone.z-good .zl{color:var(--green)}
-  .zone.z-drift{border-color:rgba(247,147,30,.5)}              .zone.z-drift .zl{color:var(--amber)}
+  .zone.z-sharp{border-color:rgba(0,255,136,.4)}               .zone.z-sharp .zl{color:var(--green)}
+  .zone.z-good{border-color:rgba(245,208,32,.45)}              .zone.z-good .zl{color:var(--yellow)}
+  .zone.z-drift{border-color:rgba(255,140,43,.5)}              .zone.z-drift .zl{color:var(--orange)}
   .zone.z-danger,.zone.z-auto{border-color:rgba(255,51,102,.55);background:rgba(255,51,102,.08)} .zone.z-danger .zl,.zone.z-auto .zl{color:var(--red)}
   /* drill-in context-trajectory sparkline */
   .spark{margin:8px 0;border:1px solid var(--line);border-radius:9px;padding:7px 9px;background:var(--card2)}
@@ -748,10 +749,12 @@ function zone(s){
   if(ptc>=85)                        return {key:'danger',emoji:'🔴', label:'Near the wall', color:'var(--red)',   advice:'Close to the window limit — /compact now to pick your own checkpoint before auto-compact does.'};
   // DUMB ZONE — ABSOLUTE accumulated context (Context Rot). A clarity risk, NOT the wall: never claim
   // auto-compact is near (on a 1M window you can be deep here at ~20% full).
-  if(ctx>=ZONE_TOK.danger)           return {key:'danger',emoji:'🔴', label:'Deep',          color:'var(--red)',   advice:'Deep in the dumb zone — lots of accumulated context may dull responses. /clear or /compact restores focus. (This is about clarity, not the window wall.)'};
-  if(ctx>=ZONE_TOK.drift)            return {key:'drift', emoji:'🟠', label:'Drifting',      color:'var(--amber)', advice:'Context is filling — older details may start slipping. Wrap up sub-tasks or plan a /compact when convenient.'};
-  if(ctx>=ZONE_TOK.good)             return {key:'good',  emoji:'🟡', label:'Good',          color:'var(--green)', advice:'Healthy headroom. Keep going.'};
-  return                                    {key:'sharp', emoji:'🟢', label:'Sharp',         color:'var(--green)', advice:'Plenty of headroom — Claude is at its sharpest.'};
+  // Dumb zone is a RANGE, not a switch: 🟡 onset → 🟠 drifting → 🔴 deep. Degradation is gradual (no hard
+  // knee — see docs/COMPONENTS.md Advisory), so the colors escalate rather than flip on at one threshold.
+  if(ctx>=ZONE_TOK.danger)           return {key:'danger',emoji:'🔴', label:'Deep',          color:'var(--red)',    advice:'Deep in the dumb zone — lots of accumulated context may dull responses. /clear or /compact restores focus. (This is about clarity, not the window wall.)'};
+  if(ctx>=ZONE_TOK.drift)            return {key:'drift', emoji:'🟠', label:'Drifting',      color:'var(--orange)', advice:'Mid dumb-zone — older details may start slipping. Wrap up sub-tasks or plan a /compact when convenient.'};
+  if(ctx>=ZONE_TOK.good)             return {key:'good',  emoji:'🟡', label:'Warming',       color:'var(--yellow)', advice:'Entering the dumb-zone range — context is getting long. Still fine; no action needed yet, just be aware.'};
+  return                                    {key:'sharp', emoji:'🟢', label:'Sharp',         color:'var(--green)',  advice:'Plenty of headroom — Claude is at its sharpest.'};
 }
 // ---- dumb-zone CLARITY meter (the SOFT companion to zone(), for the inline tile pip) ----
 // Maps ABSOLUTE accumulated context to fill 0..1 (0 empty → 1.0 at ~200k = ZONE_TOK.danger) and a
@@ -761,9 +764,22 @@ function zone(s){
 function clarity(s){
   const ctx=(s&&s.context_tokens)||0;
   const fill=Math.max(0,Math.min(1,ctx/ZONE_TOK.danger));
-  const hue=Math.round(140-105*fill);          // 140 calm green → 35 soft orange (never red ~0)
-  const sat=Math.round(30+50*fill);            // muted when low, warmer as it grows
+  const hue=Math.round(140-140*fill);          // 140 green → ~55 yellow → ~30 orange → 0 red across the range
+  const sat=Math.round(35+55*fill);            // muted when low, warmer/redder as it grows
   return {ctx,fill,col:`hsl(${hue},${sat}%,58%)`};
+}
+// dumb-zone threshold ticks on a session's fill bar — the RANGE made visible: 🟡 onset (good) → 🟠 drift →
+// 🔴 danger, each at the %-position its absolute-token boundary falls for this window. A tick is dropped
+// when its boundary is at/past the bar's end (≥100%). Shared by the hero (witem) and the row cards.
+function dzTicks(s){
+  if(!feat.dumbzone || !s.window) return '';
+  const t=(tok,col,emoji,label,tip)=>{
+    const p=(tok/s.window)*100;
+    return p<100 ? `<span class="dz-tick" style="left:${p.toFixed(1)}%;background:${col}" data-tip="${emoji} ${label} – Dumb Zone\n${fmtTok(tok)} accumulated context tokens. ${tip}"></span>` : '';
+  };
+  return t(ZONE_TOK.good,  'var(--yellow)','🟡','Warming', 'Entering the dumb-zone range — context is getting long. Still fine; just be aware.')
+       + t(ZONE_TOK.drift, 'var(--orange)','🟠','Drifting','Older details may start slipping; plan a /compact at your next clean checkpoint.')
+       + t(ZONE_TOK.danger,'var(--red)',   '🔴','Deep',    'Deep dumb zone; accumulated context may dull responses. /compact or /clear restores focus.');
 }
 const esc=t=>(t==null?'':String(t)).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
 const rel=s=>{s=Math.round(s);return s<2?'live':s<60?s+'s':Math.round(s/60)+'m';};
@@ -1222,15 +1238,7 @@ function render(list){
     for(const s of needs){
       const perm=(s.state==='waiting'&&s.awaiting_input_since)?'':'';
       const ask=s.last_msg?`<div class="ask">${s.last_msg.kind==='ask'?'❓ ':'💬 '}${esc(s.last_msg.text)}</div>`:'';
-      const wdzTick = (() => {
-        if (!feat.dumbzone || !s.window) return '';
-        const driftPct = (ZONE_TOK.drift / s.window) * 100;
-        if (driftPct >= 100) return '';
-        let out = `<span class="dz-tick" style="left:${driftPct.toFixed(1)}%;background:var(--amber)" data-tip="🟠 Drift – Dumb Zone\n${fmtTok(ZONE_TOK.drift)} accumulated context tokens. Older details may start slipping; plan a /compact at your next clean checkpoint."></span>`;
-        const dangerPct = (ZONE_TOK.danger / s.window) * 100;
-        if (dangerPct < 100) out += `<span class="dz-tick" style="left:${dangerPct.toFixed(1)}%;background:var(--red)" data-tip="🔴 Danger – Dumb Zone\n${fmtTok(ZONE_TOK.danger)} accumulated context tokens. Deep dumb zone; accumulated context may dull responses. /compact or /clear restores focus."></span>`;
-        return out;
-      })();
+      const wdzTick = dzTicks(s);
       html+=`<div class="witem" data-sid="${s.session_id}">
         <div class="who">${badge(s)}</div>
         <div class="wait">${waited(s)}<small>waiting</small></div>
@@ -1274,15 +1282,7 @@ function render(list){
         ? `<span class="dz-pip" title="🧠 Dumb-zone risk · ~${fmtTok(cl.ctx)} accumulated context. Tracks Context Rot (how much you're carrying), NOT how full the window is — a soft heuristic (your measured tool-errors show no hard knee). Fuller = consider /clear or /compact for a clean checkpoint.">🧠<i class="dot" style="--f:${cl.fill.toFixed(3)};--c:${cl.col}"></i></span>`
         : '';
       // dumb-zone threshold ticks: thin needles on the fill bar showing where drift/danger start in token-space
-      const dzTick = (() => {
-        if (!dz || !s.window) return '';
-        const driftPct = (ZONE_TOK.drift / s.window) * 100;
-        if (driftPct >= 100) return '';
-        let out = `<span class="dz-tick" style="left:${driftPct.toFixed(1)}%;background:var(--amber)" data-tip="🟠 Drift – Dumb Zone\n${fmtTok(ZONE_TOK.drift)} accumulated context tokens. Older details may start slipping; plan a /compact at your next clean checkpoint."></span>`;
-        const dangerPct = (ZONE_TOK.danger / s.window) * 100;
-        if (dangerPct < 100) out += `<span class="dz-tick" style="left:${dangerPct.toFixed(1)}%;background:var(--red)" data-tip="🔴 Danger – Dumb Zone\n${fmtTok(ZONE_TOK.danger)} accumulated context tokens. Deep dumb zone; accumulated context may dull responses. /compact or /clear restores focus."></span>`;
-        return out;
-      })();
+      const dzTick = dzTicks(s);
       html+=`<div class="row ${s.stale?'stale':''}" data-sid="${s.session_id}">
         <div class="who">${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span>${pip}</div>
         <div class="pct" style="color:${c}" title="Context window ${Math.round(s.pct)}% full — higher means closer to auto-compaction">${Math.round(s.pct)}%</div>
