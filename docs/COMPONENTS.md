@@ -210,24 +210,24 @@ auto-applies.
 
 ---
 
-## The 14 UI scenes (swipe / nav between them)
+## The 9 UI scenes (swipe / nav between them)
 
-| Scene | What it shows |
-|------|----------------|
-| 🎯 **Triage** | who **needs you** (genuinely blocked) on top; working/idle below; context gauge per session |
-| 💰 **Cost** | spend by account, burn rate ($/h), today vs baseline, plan rate-limit gauges (5h/7d) |
-| 📈 **History** | all-time totals, daily spend bars, top projects, context-trajectory + Craft-signal trends |
-| 🏆 **Trophy** | reporting: totals + streaks, calendar heatmap, time-of-day rhythm, model-mix, cache savings |
-| 🏅 **Craft** | your Craft Score (Efficiency · Hygiene · Craft) + grade, medals, recent-form & personal-best |
-| 🧠 **Coach** | content-free session "report card" + an AI narrative (via the coach worker / `jaid-coach` skill) |
-| 💡 **Efficiency** | opportunities (never judgments): model right-sizing what-ifs, subscription ROI, reducible spend |
-| 🧩 **MCP** | configured vs used MCP servers (dead weight), real context-floor token cost; setup card |
-| 🖥️ **Fleet** | per-host health (🟢/🟡/🔴) — tells "idle but healthy" apart from "watcher down" |
-| 🗂️ **Archive** | sessions you've hidden from Triage (server-side, cross-device) |
-| 🔍 **Search** | **opt-in, default-OFF, local-only** full-text + semantic search over transcripts (content firewall) |
-| 🧹 **Maintenance** | storage stats, encrypted export/import, checkpoint/prune/vacuum |
-| ℹ️ **About** | version, non-affiliation disclaimer, Terms & License |
-| ❓ **Help** | legend + troubleshooting; how to run the `jaid-coach` skill |
+Consolidated from an earlier 14 — several scenes that were really one job got merged: **Reports** folds the
+old History + Trophy Room; the **Coach** hub tabs Score (Craft) · Coach · Savings (Efficiency); **Archive**
+is now a filter on Triage; **About** folded into Help. The hamburger menu groups them: Live · Spend ·
+Improve · Hygiene · System.
+
+| Scene | Group | What it shows |
+|------|------|----------------|
+| 🎯 **Triage** | Live | who **needs you** (genuinely blocked) on top; working/idle below; context gauge per session. The **📋 Active / 🗂️ Archived** tabs appear here when you've hidden sessions (server-side, cross-device) — Archive is no longer its own scene |
+| 💰 **Cost** | Spend | spend by account, burn rate ($/h), today vs baseline, plan rate-limit gauges (5h/7d) |
+| 📊 **Reports** | Improve | **History** (all-time totals, daily spend bars, top projects, context-trajectory + Craft-signal trends) stacked above the **Trophy Room** (totals + streaks, calendar heatmap, time-of-day rhythm, model-mix, cache savings) |
+| 🏅 **Coach** | Improve | tabbed hub — **Score** (Craft Score: Efficiency · Hygiene · Craft + grade, medals, recent-form & personal-best) · **Coach** (content-free session "report card" + AI narrative via the coach worker / `jaid-coach` skill) · **Savings** (opportunities never judgments: model right-sizing what-ifs, subscription ROI, reducible spend) |
+| 🧩 **MCP** | Hygiene | configured vs used MCP servers (dead weight), real context-floor token cost; setup card |
+| 🖥️ **Fleet** | Live | per-host health (🟢/🟡/🔴) — tells "idle but healthy" apart from "watcher down" |
+| 🔍 **Search** | Hygiene | **opt-in, default-OFF, local-only** full-text + semantic search over transcripts (content firewall) |
+| 🧹 **Maintenance** | System | storage stats, encrypted export/import, checkpoint/prune/vacuum |
+| ℹ️ **About / Help** | System | legend + troubleshooting; how to run the `jaid-coach` skill; version, non-affiliation disclaimer, Terms & License |
 
 ---
 

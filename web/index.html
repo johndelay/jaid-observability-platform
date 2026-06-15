@@ -134,6 +134,21 @@
     box-shadow:0 0 6px hsl(var(--h),70%,55%);flex:0 0 auto}
   .achip.on{color:var(--txt);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 12px rgba(0,217,255,.25)}
   .achip .ac{font-size:10px;background:var(--card2);border-radius:8px;padding:1px 6px;color:var(--muted)}
+  /* Triage Active|Archived filter tabs (Archive folded into Triage; sticky at the top of #app) */
+  .trtabs{position:sticky;top:0;z-index:4;display:flex;gap:8px;margin:-2px 0 2px;
+    padding:4px 0 10px;background:linear-gradient(var(--bg) 78%,transparent)}
+  .trtab{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);
+    background:var(--card);border:1px solid var(--line);border-radius:20px;padding:5px 12px;cursor:pointer;
+    font-family:inherit;line-height:1}
+  .trtab.on{color:var(--txt);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 12px rgba(0,217,255,.25)}
+  .trtab .ac{font-size:10px;background:var(--card2);border-radius:8px;padding:1px 6px;color:var(--muted)}
+  /* Coach hub: Score | Coach | Savings tabs (Craft + Coach + Efficiency merged into one scene) */
+  .hubtabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 2px}
+  .hubtab{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:12px;
+    font-weight:700;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:20px;
+    padding:7px 12px;cursor:pointer;font-family:inherit;line-height:1}
+  .hubtab.on{color:var(--txt);border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 12px rgba(0,217,255,.25)}
+  .hubpanel[hidden]{display:none}
 
   /* ---- fleet reporting-health strip (P4): one chip per known host + auth-rejection warnings ---- */
   .fleet{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px 0;max-width:780px;margin:0 auto}
@@ -275,6 +290,10 @@
     color:var(--green);background:rgba(0,255,136,.10);border:1px solid var(--green);border-radius:999px;
     padding:3px 13px;margin:16px 2px 7px;box-shadow:0 0 9px rgba(0,255,136,.26);
     text-shadow:0 0 6px rgba(0,255,136,.5)}
+  /* lighter sub-group label inside the Scenes section of the menu */
+  .mgrp{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);
+    opacity:.7;margin:11px 6px 3px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06)}
+  .mgrp:first-child{border-top:0;padding-top:0;margin-top:4px}
   .mrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;
     background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px}
   .mrow .ml{display:flex;align-items:center;gap:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -521,20 +540,29 @@
     <!-- scene 1: Cost & Accounts (renderCost() fills it) -->
     <section id="scene-cost" class="scene legend"><div class="empty">Loading cost &amp; accounts…</div></section>
 
-    <!-- scene 2: History / Trophy Room (renderHistory() fills it) -->
-    <section id="scene-history" class="scene legend"><div class="empty">Loading history…</div></section>
+    <!-- scene: 📊 Reports — History (trends, daily bars, top projects, craft-signals; renderHistory())
+         stacked above the Trophy Room (all-time totals, streaks, calendar/time heatmaps, model-mix,
+         cache savings; renderTrophy() from /report). Inner ids preserved so both render fns + delegated
+         handlers (e.g. #scene-trophy rect.hcell) keep working unchanged. -->
+    <section id="scene-reports" class="scene legend">
+      <div id="scene-history"><div class="empty">Loading history…</div></div>
+      <div id="scene-trophy"><div class="empty">Loading trophy room…</div></div>
+    </section>
 
-    <!-- scene: Trophy Room — all-time vanity totals + streaks + cache savings (renderTrophy() from /report) -->
-    <section id="scene-trophy" class="scene legend"><div class="empty">Loading trophy room…</div></section>
-
-    <!-- scene: Craft Score (renderCraft() fills it from /craft) -->
-    <section id="scene-craft" class="scene legend"><div class="empty">Loading Craft Score…</div></section>
-
-    <!-- scene: 🧠 Coach — AI coaching (Claude Code handoff now; in-app narrative next) + Session Autopsy (renderCoach() from /coach + /autopsy) -->
-    <section id="scene-coach" class="scene legend"><div class="empty">Loading coach…</div></section>
-
-    <!-- scene: Efficiency coach — what-if model-downgrade savings (renderEfficiency() from /efficiency) -->
-    <section id="scene-efficiency" class="scene legend"><div class="empty">Loading efficiency…</div></section>
+    <!-- scene: 🏅 Coach hub — three tabs in one scene: Score (renderCraft() from /craft) ·
+         Coach (renderCoach() from /coach + /autopsy) · Savings (renderEfficiency() from /efficiency).
+         Inner scene-craft / scene-coach / scene-efficiency ids preserved so all three render fns and
+         their delegated handlers keep working unchanged; paintCoachTabs() toggles which panel shows. -->
+    <section id="scene-coachhub" class="scene legend">
+      <div class="hubtabs" id="coachhub-tabs">
+        <button class="hubtab on" data-hubtab="craft">🏅 Score</button>
+        <button class="hubtab" data-hubtab="coach">🧠 Coach</button>
+        <button class="hubtab" data-hubtab="efficiency">💡 Savings</button>
+      </div>
+      <div id="scene-craft" class="hubpanel"><div class="empty">Loading Craft Score…</div></div>
+      <div id="scene-coach" class="hubpanel" hidden><div class="empty">Loading coach…</div></div>
+      <div id="scene-efficiency" class="hubpanel" hidden><div class="empty">Loading efficiency…</div></div>
+    </section>
 
     <!-- scene: 🧩 MCP tax — configured servers vs. observed usage / dead weight (renderMcp() from /mcp) -->
     <section id="scene-mcp" class="scene legend"><div class="empty">Loading MCP…</div></section>
@@ -542,8 +570,8 @@
     <!-- scene 3: Fleet / Hosts (renderFleetScene() fills it) -->
     <section id="scene-fleet" class="scene legend"><div class="empty">Loading fleet…</div></section>
 
-    <!-- scene 3: Archive / hidden sessions (renderArchive() fills it) -->
-    <section id="scene-archive" class="scene legend"><div class="empty">Nothing archived.</div></section>
+    <!-- (Archive is no longer its own scene — hidden sessions are folded into Triage via the
+         📋 Active | 🗂️ Archived filter tabs at the top of the list. See render() + triageTabs().) -->
 
     <!-- scene: 🔍 Search — V9 local transcript full-text recovery. The ONE content-bearing scene: local-only
          (served on the loopback content port), opt-in, do-not-screenshot. renderSearch() from /search-meta + /search -->
@@ -553,11 +581,9 @@
          Screenshot-safe (sizes/counts only). renderMaint() from /maintenance. -->
     <section id="scene-maint" class="scene legend"><div class="empty">Loading maintenance…</div></section>
 
-    <!-- scene: ℹ️ About — project identity, vendor-generic disclaimer, license, version. Screenshot-safe. -->
-    <section id="scene-about" class="scene legend"><div class="empty">Loading…</div></section>
-
-    <!-- scene 4: Help / Legend — static glossary (attacks the "foreign to new users" problem;
-         also the touch-friendly answer to "no hover tooltips on mobile") -->
+    <!-- scene: ℹ️ About / Help — merged. Static glossary (attacks the "foreign to new users" problem;
+         also the touch-friendly answer to "no hover tooltips on mobile") PLUS the About block
+         (#scene-about, filled by renderAbout()) folded in as a footer card stack. -->
     <section id="scene-help" class="scene legend">
       <h2>What am I looking at?</h2>
       <p class="intro">This board watches your Claude Code sessions across every machine and tells you,
@@ -612,6 +638,9 @@
       </div>
 
       <p class="foot">More scenes &amp; explanations coming. Tip: tap any session for live detail and a resume command.</p>
+
+      <!-- About block (project identity, disclaimer, license, version) — renderAbout() fills this. -->
+      <div id="scene-about"><div class="empty">Loading…</div></div>
 
       <p class="foot">Independent project — not affiliated with or endorsed by Anthropic, Google, or any AI vendor whose products it integrates. Product names &amp; trademarks (e.g. 'Claude', 'Antigravity') belong to their owners. MIT&nbsp;License.</p>
     </section>
@@ -871,6 +900,17 @@ function setReveal(v){ revealNames=!!v; prefSet('reveal',revealNames); rerenderA
 // Replaces machine names at the top with the detected Claude accounts. Tap a chip → filter the whole app
 // to that account; tap "All" (or the active chip) → clear. Hidden when ≤1 account (nothing to filter).
 let accountFilter=prefGet('acctFilter',null);
+// Triage view filter: 'active' (default) shows live sessions; 'archived' shows the ones you've hidden.
+// Ephemeral (not persisted) — every load starts on Active. The Archived tab only appears when something
+// is archived (or you're already viewing it). Replaces the old standalone Archive scene.
+let triageView='active';
+function setTriageView(v){ triageView=(v==='archived')?'archived':'active'; }   // (exposed for ui_smoke)
+function triageTabs(activeN,hiddenN){
+  return '<div class="trtabs">'
+    +'<button class="trtab'+(triageView==='active'?' on':'')+'" data-trview="active">📋 Active'+(activeN?' <span class="ac">'+activeN+'</span>':'')+'</button>'
+    +'<button class="trtab'+(triageView==='archived'?' on':'')+'" data-trview="archived">🗂️ Archived'+(hiddenN?' <span class="ac">'+hiddenN+'</span>':'')+'</button>'
+    +'</div>';
+}
 const accountsEl=document.getElementById('accounts');
 function accountsOf(list,cost){
   const set=new Set(), ok=a=>a&&a!=='(unknown)'&&a!=='(unattributed)';   // skip cost-only catch-all buckets
@@ -1361,10 +1401,26 @@ const SCENE_HELP={
 
 function render(list){
   window._cards={}; window._list=list; list.forEach(s=>window._cards[s.session_id]=s);
-  renderAccounts(); renderArchive();
+  renderAccounts();
   if(accountFilter) list=list.filter(s=>s.account===accountFilter);   // top-bar account filter
-  list=list.filter(s=>!s.hidden);                                     // archived sessions live in the Archive scene
-  if(!list.length){app.innerHTML=accountFilter?'<div class="empty">No sessions for this account.<br>Tap “All” at the top to clear the filter.</div>':'<div class="empty">No active sessions.</div>';paintSuggestDock();return;}
+  const hiddenList=list.filter(s=>s.hidden);                          // archived (hidden from the active list)
+  if(triageView==='archived'&&!hiddenList.length) triageView='active';// un-hid the last one → fall back to Active
+  // Active|Archived tabs appear only when there's something archived (or you're viewing it) — keeps the
+  // common case clutter-free. Archive used to be its own scene; it's now a filter on Triage.
+  const trtabs=(hiddenList.length||triageView==='archived')?triageTabs(list.filter(s=>!s.hidden).length,hiddenList.length):'';
+  if(triageView==='archived'){
+    let ah=trtabs;
+    for(const s of hiddenList){
+      ah+=`<div class="row" data-unhide="${s.session_id}">
+        <div class="who">${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span></div>
+        <div class="pct"><button class="ubtn">♻ un-hide</button></div>
+        <div class="sub"><span>${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}</span><span>${Math.round(s.pct)}% · ${rel(s.age_secs)}</span></div>
+      </div>`;
+    }
+    app.innerHTML=ah; paintSuggestDock(); return;
+  }
+  list=list.filter(s=>!s.hidden);                                     // Active view: archived sessions are hidden
+  if(!list.length){app.innerHTML=trtabs+(accountFilter?'<div class="empty">No sessions for this account.<br>Tap “All” at the top to clear the filter.</div>':'<div class="empty">No active sessions.</div>');paintSuggestDock();return;}
   // "Needs you" = the server's needs_me, which now means Claude is actually BLOCKED on you (a permission
   // Notification or an explicit AskUserQuestion) — NOT merely that a turn finished. A bare turn-completion
   // (Stop hook / transcript ending on an assistant message) is demoted to idle server-side, so it never
@@ -1383,7 +1439,7 @@ function render(list){
   const multiAcct=new Set(list.map(s=>s.account).filter(Boolean)).size>1;  // tag cards only when fleet spans >1 account
 
   // NEEDS YOU hero
-  let html='';
+  let html=trtabs;
   if(needs.length){
     html+=`<section class="needs hot"><div class="h">⏳ Needs you<span class="n">${needs.length}</span></div>`;
     for(const s of needs){
@@ -2571,24 +2627,8 @@ function renderFleetScene(d){
   sc.innerHTML=h;
 }
 
-// ---- Archive scene: sessions the user hid from Triage (server-persisted, so it follows them across devices) ----
-function renderArchive(){
-  const sc=document.getElementById('scene-archive'); if(!sc)return;
-  const hidden=(window._list||[]).filter(s=>s.hidden);
-  let h='<h2>Archive</h2><p class="intro">Sessions you’ve hidden from Triage. This list follows you across devices. Tap “un-hide” to bring one back.</p>';
-  if(!hidden.length){ sc.innerHTML=h+'<div class="empty">Nothing archived.<br>Open a session and tap “Archive” to tuck it away.</div>'; return; }
-  for(const s of hidden){
-    h+=`<div class="row" data-unhide="${s.session_id}">
-      <div class="who">${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span></div>
-      <div class="pct"><button class="ubtn">♻ un-hide</button></div>
-      <div class="sub"><span>${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}</span><span>${Math.round(s.pct)}% · ${rel(s.age_secs)}</span></div>
-    </div>`;
-  }
-  sc.innerHTML=h;
-}
-document.getElementById('scene-archive').addEventListener('click',e=>{
-  const r=e.target.closest('[data-unhide]'); if(r)unhideSession(r.getAttribute('data-unhide'));
-});
+// ---- Archive: sessions the user hid from Triage (server-persisted, follows them across devices). These
+// are now shown in-place via the Triage 🗂️ Archived tab (see render()/triageTabs), not a separate scene. ----
 // hide/un-hide → server-persisted via /pref. Optimistically mutate the shared snapshot object (so it's the
 // same ref in window._list / window._cards) and re-render; the next /state tick confirms from the server.
 async function setPref(sid,patch){
@@ -2612,7 +2652,11 @@ let openSid=null, actTimer=null, histPts=[], evData=null;
 const dreply=document.getElementById('dreply'), rtext=document.getElementById('rtext'),
       rsend=document.getElementById('rsend'), rmsg=document.getElementById('rmsg');
 document.getElementById('dback').onclick=closeDetail;
-app.addEventListener('click',e=>{const el=e.target.closest('[data-sid]');if(el)openDetail(el.getAttribute('data-sid'));});
+app.addEventListener('click',e=>{
+  const tv=e.target.closest('[data-trview]'); if(tv){ setTriageView(tv.getAttribute('data-trview')); render(window._list||[]); return; }
+  const uh=e.target.closest('[data-unhide]'); if(uh){ unhideSession(uh.getAttribute('data-unhide')); return; }
+  const el=e.target.closest('[data-sid]'); if(el)openDetail(el.getAttribute('data-sid'));
+});
 // copy-to-clipboard for the resume command (clipboard API + execCommand fallback for HTTP/older browsers)
 async function copyText(t){
   try{ if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(t);return true;} }catch(_){}
@@ -2918,26 +2962,38 @@ async function maintVacuum(){ if(!confirm('Vacuum reclaims freed space; may take
   });
 })();
 
+// `group` only organizes the hamburger menu into labeled sections (see buildMenuScenes + MENU_GROUPS);
+// the array order here is the left-to-right swipe order of the carousel.
 const SCENES=[
-  {id:'triage', title:'Triage', icon:'🎯',el:'scene-triage'},
-  {id:'cost',   title:'Cost',   icon:'💰',el:'scene-cost'},
-  {id:'history',title:'History', icon:'📈',el:'scene-history'},
-  {id:'trophy', title:'Trophy', icon:'🏆',el:'scene-trophy'},
-  {id:'craft',  title:'Craft',  icon:'🏅',el:'scene-craft'},
-  {id:'coach',  title:'Coach',  icon:'🧠',el:'scene-coach'},
-  {id:'efficiency',title:'Efficiency',icon:'💡',el:'scene-efficiency'},
-  {id:'mcp',    title:'MCP',    icon:'🧩',el:'scene-mcp'},
-  {id:'fleet',  title:'Fleet',  icon:'🖥️',el:'scene-fleet'},
-  {id:'archive',title:'Archive',icon:'🗂️',el:'scene-archive'},
-  {id:'search', title:'Search', icon:'🔍',el:'scene-search'},
-  {id:'maint',  title:'Maintenance', icon:'🧹',el:'scene-maint'},
-  {id:'about',  title:'About',  icon:'ℹ️',el:'scene-about'},
-  {id:'help',   title:'Help',   icon:'❓',el:'scene-help'},
+  {id:'triage', title:'Triage', icon:'🎯',el:'scene-triage',    group:'Live'},
+  {id:'cost',   title:'Cost',   icon:'💰',el:'scene-cost',      group:'Spend'},
+  {id:'reports',title:'Reports', icon:'📊',el:'scene-reports',  group:'Improve'},
+  {id:'coachhub',title:'Coach', icon:'🏅',el:'scene-coachhub',  group:'Improve'},
+  {id:'mcp',    title:'MCP',    icon:'🧩',el:'scene-mcp',        group:'Hygiene'},
+  {id:'maint',  title:'Maintenance', icon:'🧹',el:'scene-maint',group:'System'},
+  {id:'help',   title:'About / Help', icon:'ℹ️',el:'scene-help', group:'System'},
+  {id:'search', title:'Search', icon:'🔍',el:'scene-search',    group:'Hygiene'},   // second-from-last
+  {id:'fleet',  title:'Fleet',  icon:'🖥️',el:'scene-fleet',     group:'Live'},      // very end
 ];
+const MENU_GROUPS=['Live','Spend','Improve','Hygiene','System'];   // section order in the menu
 // Triage is home (always on). Search is the lone OPT-IN scene (default OFF): it surfaces raw transcript
 // content, so a user must deliberately enable it in the menu. Every other scene defaults on.
 const sceneEnabled=s=>s.id==='triage'?true:prefGet('scene.'+s.id, s.id==='search'?false:true);
 const visibleScenes=()=>SCENES.filter(sceneEnabled);
+
+// ---- Coach hub tabs: Score (craft) / Coach / Savings (efficiency) share one scene. The three render
+// fns keep filling their own #scene-craft/#scene-coach/#scene-efficiency divs every tick; this just
+// toggles which panel is visible. Selection persists per-device. ----
+const COACH_TABS=['craft','coach','efficiency'];
+let coachTab=prefGet('coachTab','craft'); if(!COACH_TABS.includes(coachTab))coachTab='craft';
+function paintCoachTabs(){
+  for(const id of COACH_TABS){ const p=document.getElementById('scene-'+id); if(p)p.hidden=(id!==coachTab); }
+  const tb=document.getElementById('coachhub-tabs'), btns=tb&&tb.querySelectorAll&&tb.querySelectorAll('[data-hubtab]');
+  if(btns&&btns.forEach)btns.forEach(b=>b.classList.toggle('on',b.getAttribute('data-hubtab')===coachTab));
+}
+function setCoachTab(t){ if(!COACH_TABS.includes(t))return; coachTab=t; prefSet('coachTab',t); paintCoachTabs(); }
+function wireCoachTabs(){ const tb=document.getElementById('coachhub-tabs');
+  if(tb)tb.addEventListener('click',e=>{ const b=e.target.closest('[data-hubtab]'); if(b)setCoachTab(b.getAttribute('data-hubtab')); }); }
 
 const carousel=document.getElementById('carousel'), track=document.getElementById('track'),
       navbar=document.getElementById('navbar'), navlabel=document.getElementById('navlabel'),
@@ -2992,12 +3048,23 @@ if(navdots)navdots.addEventListener('click',e=>{const d=e.target.closest('[data-
 // --- hamburger menu ---
 function buildMenuScenes(){
   if(!menuscenes)return;
-  menuscenes.innerHTML=SCENES.map(s=>{
+  const row=s=>{
     const on=sceneEnabled(s), home=s.id==='triage';
     return '<div class="mrow"><span class="ml">'+s.icon+' '+esc(s.title)+(home?' <span class="tag">home</span>':'')+'</span>'+
       (home?'<span class="sw on" style="opacity:.45;pointer-events:none"></span>'
            :'<span class="sw'+(on?' on':'')+'" data-scene="'+s.id+'"></span>')+'</div>';
-  }).join('');
+  };
+  // Group the scene toggles into labeled sections (carousel swipe order is unchanged — see SCENES).
+  let html='';
+  for(const g of MENU_GROUPS){
+    const inGroup=SCENES.filter(s=>s.group===g);
+    if(!inGroup.length)continue;
+    html+='<div class="mgrp">'+esc(g)+'</div>'+inGroup.map(row).join('');
+  }
+  // any scene without a recognized group falls through at the end (defensive)
+  const ungrouped=SCENES.filter(s=>!MENU_GROUPS.includes(s.group));
+  if(ungrouped.length)html+=ungrouped.map(row).join('');
+  menuscenes.innerHTML=html;
 }
 // --- menu: session sort controls ---
 const menusort=document.getElementById('menusort'), workingSw=document.getElementById('working-sw');
@@ -3136,7 +3203,7 @@ if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('resize',()=>goScene(sceneIdx));
 }
 
-applyVisibility(); goScene(0);   // start on Triage
+applyVisibility(); wireCoachTabs(); paintCoachTabs(); goScene(0);   // start on Triage
 
 // auto-rotate scenes (wall-display mode; paused while the drill-in or menu is open)
 setInterval(()=>{ if(feat.autorotate&&detail&&detail.hidden&&menu&&menu.hidden&&(!mcphelp||mcphelp.hidden)&&(!helpmodal||helpmodal.hidden)&&(!coachmodal||coachmodal.hidden)&&(!convo||convo.hidden)&&(!termsmodal||termsmodal.hidden)){ const n=visibleScenes().length; if(n>1)goScene((sceneIdx+1)%n); } },12000);
