@@ -100,6 +100,43 @@ Writes a tiny per-session state file on each Claude Code event. **Gives you:**
 
 ---
 
+## Advisory — the "dumb zone" is a heuristic, not an Anthropic-defined threshold
+
+> ⚠️ **Not official.** The context-health "dumb zone" / zones (🟢 <50k · 🟡 50–120k · 🟠 120–200k · 🔴 ≥200k
+> absolute tokens) used by the statusline and the gauge are **not documented or acknowledged by Anthropic at
+> this time** — nor by any other vendor. They are a **practical heuristic** grounded in public long-context
+> research, surfaced as a soft signal, **not a guarantee or a capability cliff.**
+
+What the published research consensus supports:
+1. **Quality degradation as context grows is real and universal**, and it begins well below the advertised
+   window (200k / 1M). [Liu 2023; RULER 2024; NoLiMa 2025; Chroma 2025]
+2. **"Effective context" is a fraction of the advertised window** — RULER found GPT-4's effective context
+   ≈ 64k against a 128k claim, and roughly half of tested models couldn't hold quality even at 32k.
+3. **Degradation is gradual / continuous, not a sharp cliff** — Chroma: "the decline is continuous, not a
+   cliff." (This matches JAID's own analysis of real usage, which found **no measurable error-rate knee** —
+   so the zones are presented as a gradient, never a hard line.)
+4. **It is heavily task-dependent.** Simple keyword retrieval holds near the window limit on frontier models,
+   but reasoning, multi-hop, instruction-following, and code tasks degrade much earlier. Claude Code work
+   (tool-call chains, plans, accumulated constraints) sits on the **faster-degrading** end.
+5. **No single agreed threshold exists.** The common "a 200k-window model can degrade by ~50k" rule of thumb
+   is a *qualitative* characterization, not a measured constant.
+6. **No vendor (Anthropic / OpenAI / Google) publishes an official sub-window "effective context" floor** —
+   every threshold in the wild comes from third-party benchmarks.
+
+**Bottom line:** treat the zones as a *"consider a clean checkpoint (`/compact` or `/clear`)"* nudge, not a
+hard limit. Exact numbers vary by model, task, and version; figures here are from published research
+summaries and are informational only.
+
+### Sources
+- Liu et al., **"Lost in the Middle"** (TACL 2023) — https://arxiv.org/abs/2307.03172
+- **RULER**: "What's the Real Context Size of Your Long-Context LMs?" (NVIDIA, COLM 2024) — https://arxiv.org/abs/2404.06654
+- **NoLiMa**: "Long-Context Evaluation Beyond Literal Matching" (ICML 2025) — https://arxiv.org/abs/2502.05167
+- **Chroma Research**, "Context Rot" (2025) — https://research.trychroma.com/context-rot
+- **InfiniteBench / ∞Bench** (ACL 2024) — https://arxiv.org/abs/2402.13718
+- **HELMET** (Princeton, 2024) — https://arxiv.org/abs/2410.02694
+
+---
+
 ## Layer 4 — Native sidecars (opt-in)
 
 Small native daemons that run **as you** (not in the container) because they need access the container

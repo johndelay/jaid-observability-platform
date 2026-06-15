@@ -81,8 +81,16 @@ if model:
 #       it nags only as you near the wall, NOT because absolute context is large.
 #   (2) DUMB ZONE = ABSOLUTE accumulated tokens (Context Rot; floor 120k = dashboard ZONE_TOK.drift). A
 #       QUIET, dim "🧠 long context" note — never red, never "now" — informs without alarming.
-DRIFT_TOK = 120_000                     # abs-token floor for the quiet 🧠 note (dashboard ZONE_TOK.drift)
-DIM = (139, 148, 158)                   # muted grey: the dumb-zone note must not look like an alarm
+# Dumb zone is a RANGE (mirrors dashboard ZONE_TOK + zone()): 🟡 onset → 🟠 drift → 🔴 deep, keyed on
+# ABSOLUTE accumulated tokens. Colors match the dashboard --yellow/--orange/--red. This is the Context-Rot
+# heads-up, separate from compaction proximity below; gradual, not a wall (see docs/COMPONENTS.md Advisory).
+DZ_GOOD, DZ_DRIFT, DZ_DANGER = 50_000, 120_000, 200_000
+DZ_YELLOW, DZ_ORANGE, DZ_RED = (245, 208, 32), (255, 140, 43), (255, 51, 102)
+def dzband(t):                          # dumb-zone band by absolute tokens → (rgb, label) or None
+    if t >= DZ_DANGER: return DZ_RED,    "🧠 deep context"
+    if t >= DZ_DRIFT:  return DZ_ORANGE, "🧠 drifting"
+    if t >= DZ_GOOD:   return DZ_YELLOW, "🧠 long context"
+    return None
 def pband(p):                           # compaction proximity, by % of window
     if p >= 85: return (248, 81, 73),  "🔴", "⚠ /compact now"
     if p >= 60: return (210, 153, 34), "🟡", "consider /compact"
@@ -94,10 +102,13 @@ if pct is not None:
     parts.append("\033[38;2;{};{};{}m{} {}%\033[0m".format(pr, pg, pb, emoji, pct))
     if cue:
         parts.append("\033[38;2;{};{};{}m{}\033[0m".format(pr, pg, pb, cue))
-    # dumb-zone note: keyed on ABSOLUTE tokens, rendered dim — a heads-up, not an alarm
+    # dumb-zone note: keyed on ABSOLUTE tokens, escalating 🟡→🟠→🔴 across the range (a heads-up that grows
+    # with what you carry — distinct from the compaction % above; the 🧠 prefix keeps them apart).
     size = cw.get("context_window_size") or 0
     ctx_tok = int(round(pct / 100.0 * size)) if size else 0
-    if ctx_tok >= DRIFT_TOK:
-        parts.append("\033[38;2;{};{};{}m🧠 long context\033[0m".format(*DIM))
+    dz = dzband(ctx_tok)
+    if dz:
+        (dr, dg, db), label = dz
+        parts.append("\033[38;2;{};{};{}m{}\033[0m".format(dr, dg, db, label))
 print(" · ".join(parts))
 PY

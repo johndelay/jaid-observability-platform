@@ -520,30 +520,33 @@ check('dumb-zone banner in drill-in + summary chip', () => {
 // 9j2) conflation fix: a low-% / high-abs-token tile DECOUPLES the two signals — the % keeps its
 // COMPACTION color (NOT red at 23%) and the SOFT inline 🧠 dumb-zone pip appears. Guards the reported bug
 // (red "23%" that looked like "about to compact" on a 1M window).
-check('low-% high-abs-token: % not compaction-red + soft 🧠 pip', () => {
+check('low-% high-abs-token: % not compaction-red + band-aware 🧠 pip', () => {
   ctx.setFeat('dumbzone', true);
   const cl = ctx.clarity({ context_tokens: 250000 });
   if (cl.fill !== 1) throw new Error('250k abs tokens should fill the clarity meter');
-  if (/red/i.test(cl.col)) throw new Error('clarity hue must never be alarm-red');
+  if (!/hsl\(0,/.test(cl.col)) throw new Error('clarity hue should reach the red end of the range at 200k+');
   ctx.render([{ ...STATE[1], session_id: 'deep', eff_state: 'working', needs_me: false, pct: 23, context_tokens: 250000, pct_to_compact: 23 }]);
   const app = document.getElementById('app').innerHTML;
   if (!app.includes('dz-pip')) throw new Error('inline 🧠 dumb-zone pip missing on the tile');
   if (app.includes('class="pct" style="color:var(--red)"')) throw new Error('tile % rendered compaction-red at 23% (the conflation bug)');
+  // the pip hover names the current band and keeps the soft-heuristic / no-hard-knee framing (Advisory-consistent)
+  if (!app.includes('Dumb zone:')) throw new Error('pip hover should be band-aware ("Dumb zone: <band>")');
+  if (!app.includes('no hard knee')) throw new Error('pip hover should keep the soft-heuristic / no-hard-knee framing');
 });
 
-// 9j-2) dz-tick markers appear on the fill bar: 2 ticks for 1M window (drift 12% + danger 20%),
-//       1 tick for 200k window (drift 60%; danger = 100% = off bar)
+// 9j-2) dz-tick markers show the yellow→orange→red RANGE on the fill bar: 3 ticks for a 1M window
+//       (good 5% + drift 12% + danger 20%), 2 ticks for a 200k window (good 25% + drift 60%; danger 100% = off bar)
 check('dz-tick markers on fill bar by window size', () => {
   ctx.setFeat('dumbzone', true);
   ctx.render([{ ...STATE[0], session_id: 'tick1m', eff_state: 'working', needs_me: false, pct: 30, context_tokens: 80000 }]);
   const h1m = document.getElementById('app').innerHTML;
   if (!h1m.includes('dz-tick')) throw new Error('dz-tick missing on 1M session');
-  if ((h1m.match(/class="dz-tick"/g)||[]).length < 2) throw new Error('expected 2 dz-tick marks on 1M session (drift + danger)');
+  if ((h1m.match(/class="dz-tick"/g)||[]).length !== 3) throw new Error('expected 3 dz-tick marks on 1M session (good + drift + danger)');
   if (!h1m.includes('data-tip=')) throw new Error('dz-tick missing data-tip tooltip on 1M session');
   ctx.render([{ ...STATE[1], session_id: 'tick200k', eff_state: 'working', needs_me: false, pct: 30, context_tokens: 80000 }]);
   const h200k = document.getElementById('app').innerHTML;
   if (!h200k.includes('dz-tick')) throw new Error('dz-tick missing on 200k session');
-  if ((h200k.match(/class="dz-tick"/g)||[]).length !== 1) throw new Error('expected exactly 1 dz-tick on 200k session (danger off bar)');
+  if ((h200k.match(/class="dz-tick"/g)||[]).length !== 2) throw new Error('expected exactly 2 dz-tick on 200k session (good + drift; danger off bar)');
   if (!h200k.includes('data-tip=')) throw new Error('dz-tick missing data-tip tooltip on 200k session');
 });
 
