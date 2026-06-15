@@ -833,7 +833,9 @@ function dzTicks(s){
        + t(ZONE_TOK.drift, 'var(--orange)','🟠','Drifting','Older details may start slipping; plan a /compact at your next clean checkpoint.')
        + t(ZONE_TOK.danger,'var(--red)',   '🔴','Deep',    'Deep dumb zone; accumulated context may dull responses. /compact or /clear restores focus.');
 }
-const esc=t=>(t==null?'':String(t)).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+// Escapes for HTML TEXT *and* quoted-attribute context: also encodes " and ' so interpolating into
+// title="..." / data-x="..." / href="..." can't break out of the attribute (attribute-context XSS).
+const esc=t=>(t==null?'':String(t)).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
 const rel=s=>{s=Math.round(s);return s<2?'live':s<60?s+'s':Math.round(s/60)+'m';};
 const dur=s=>s==null?'':s<90?'~'+Math.round(s)+'s':s<5400?'~'+Math.round(s/60)+'m':'~'+(s/3600).toFixed(1)+'h';
 // plan rate-limits (5h + 7d) are ACCOUNT-level, not per-session — and a fleet can span >1 Claude account
