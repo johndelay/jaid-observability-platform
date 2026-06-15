@@ -520,15 +520,18 @@ check('dumb-zone banner in drill-in + summary chip', () => {
 // 9j2) conflation fix: a low-% / high-abs-token tile DECOUPLES the two signals — the % keeps its
 // COMPACTION color (NOT red at 23%) and the SOFT inline 🧠 dumb-zone pip appears. Guards the reported bug
 // (red "23%" that looked like "about to compact" on a 1M window).
-check('low-% high-abs-token: % not compaction-red + soft 🧠 pip', () => {
+check('low-% high-abs-token: % not compaction-red + band-aware 🧠 pip', () => {
   ctx.setFeat('dumbzone', true);
   const cl = ctx.clarity({ context_tokens: 250000 });
   if (cl.fill !== 1) throw new Error('250k abs tokens should fill the clarity meter');
-  if (/red/i.test(cl.col)) throw new Error('clarity hue must never be alarm-red');
+  if (!/hsl\(0,/.test(cl.col)) throw new Error('clarity hue should reach the red end of the range at 200k+');
   ctx.render([{ ...STATE[1], session_id: 'deep', eff_state: 'working', needs_me: false, pct: 23, context_tokens: 250000, pct_to_compact: 23 }]);
   const app = document.getElementById('app').innerHTML;
   if (!app.includes('dz-pip')) throw new Error('inline 🧠 dumb-zone pip missing on the tile');
   if (app.includes('class="pct" style="color:var(--red)"')) throw new Error('tile % rendered compaction-red at 23% (the conflation bug)');
+  // the pip hover names the current band and keeps the soft-heuristic / no-hard-knee framing (Advisory-consistent)
+  if (!app.includes('Dumb zone:')) throw new Error('pip hover should be band-aware ("Dumb zone: <band>")');
+  if (!app.includes('no hard knee')) throw new Error('pip hover should keep the soft-heuristic / no-hard-knee framing');
 });
 
 // 9j-2) dz-tick markers show the yellow→orange→red RANGE on the fill bar: 3 ticks for a 1M window

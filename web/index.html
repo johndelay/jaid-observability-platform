@@ -768,6 +768,14 @@ function clarity(s){
   const sat=Math.round(35+55*fill);            // muted when low, warmer/redder as it grows
   return {ctx,fill,col:`hsl(${hue},${sat}%,58%)`};
 }
+// Pure absolute-token dumb-zone band (Context Rot) — independent of window-% proximity, so it matches the
+// pip dot's color and the fill-bar ticks. Drives the 🧠 pip hover so the explanation names the current band.
+function dzBand(ctx){
+  if(ctx>=ZONE_TOK.danger) return {emoji:'🔴', label:'Deep',     tip:'accumulated context may be dulling responses — /clear or /compact for a clean checkpoint.'};
+  if(ctx>=ZONE_TOK.drift)  return {emoji:'🟠', label:'Drifting', tip:'older details may start slipping — plan a /compact when convenient.'};
+  if(ctx>=ZONE_TOK.good)   return {emoji:'🟡', label:'Warming',  tip:'context is getting long — still fine, just be aware.'};
+  return                          {emoji:'🟢', label:'Sharp',    tip:'plenty of headroom.'};
+}
 // dumb-zone threshold ticks on a session's fill bar — the RANGE made visible: 🟡 onset (good) → 🟠 drift →
 // 🔴 danger, each at the %-position its absolute-token boundary falls for this window. A tick is dropped
 // when its boundary is at/past the bar's end (≥100%). Shared by the hero (witem) and the row cards.
@@ -1279,7 +1287,7 @@ function render(list){
       // compaction (% of window) owns the number+bar + the alarm red; the dumb zone gets its own SOFT
       // inline 🧠 pip (fill+hue grow with absolute context) so the two can't be confused.
       const pip = dz && s.context_tokens!=null
-        ? `<span class="dz-pip" title="🧠 Dumb-zone risk · ~${fmtTok(cl.ctx)} accumulated context. Tracks Context Rot (how much you're carrying), NOT how full the window is — a soft heuristic (your measured tool-errors show no hard knee). Fuller = consider /clear or /compact for a clean checkpoint.">🧠<i class="dot" style="--f:${cl.fill.toFixed(3)};--c:${cl.col}"></i></span>`
+        ? (()=>{ const b=dzBand(cl.ctx); return `<span class="dz-pip" title="🧠 Dumb zone: ${b.emoji} ${b.label} · ~${fmtTok(cl.ctx)} carried — ${b.tip} A gradual range (🟡 warming → 🟠 drifting → 🔴 deep), NOT a wall: this tracks Context Rot (what you're carrying), not window fill. A soft heuristic — not an Anthropic-defined threshold, and your own data shows no hard knee.">🧠<i class="dot" style="--f:${cl.fill.toFixed(3)};--c:${cl.col}"></i></span>`; })()
         : '';
       // dumb-zone threshold ticks: thin needles on the fill bar showing where drift/danger start in token-space
       const dzTick = dzTicks(s);
