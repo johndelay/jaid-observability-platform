@@ -433,6 +433,8 @@
   .mcphost-hd{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .mcphost-hd h3{margin:0}
   .helpq.sm{width:22px;height:22px;font-size:13px;line-height:1}
+  /* scene header with an inline "?" help button (Search/Cost/History/Maintenance + others) */
+  .schead{display:flex;align-items:center;gap:8px;margin:0 0 4px} .schead h2{margin:0}
   .mcp-turnoff{font-size:12px;color:var(--muted);text-align:left;margin:6px 0 2px;border-top:1px dashed var(--line);padding-top:6px}
   code.mcpcmd{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px;word-break:break-all;margin:4px 0;cursor:pointer;user-select:all}
   code.mcpcmd .cp{flex:0 0 auto;cursor:pointer;user-select:none}
@@ -656,6 +658,7 @@
     <div class="msect">Help &amp; support</div>
     <div class="mrow" data-help-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">❓ Help &amp; troubleshooting</span><span class="tag">open</span></div>
     <div class="mrow" data-coach-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">🧠 JAID Coach <span class="muted" style="font-weight:400">· coach me on my Claude Code usage</span></span><span class="tag">open</span></div>
+    <div class="mrow" data-privacy-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">🔒 Privacy &amp; your data <span class="muted" style="font-weight:400">· what stays on your machine</span></span><span class="tag">open</span></div>
   </div>
 </div>
 <div id="mcphelp" class="modal" hidden>
@@ -698,6 +701,18 @@
   <div class="modalpanel">
     <div class="modalhead"><h3>🧠 JAID Coach</h3><button id="coachmodalclose" class="modalclose">✕</button></div>
     <div id="coachmodalbody"></div>
+  </div>
+</div>
+<div id="privacymodal" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3>🔒 Privacy &amp; your data</h3><button id="privacymodalclose" class="modalclose">✕</button></div>
+    <div id="privacymodalbody"></div>
+  </div>
+</div>
+<div id="schelp" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3 id="schelptitle"></h3><button id="schelpclose" class="modalclose">✕</button></div>
+    <div id="schelpbody"></div>
   </div>
 </div>
 <div id="detail" class="overlay" hidden>
@@ -1038,7 +1053,7 @@ function coachModalBody(){
 
 // ---- Suggestions / Reading card ----
 // public gist URL for the hosted article list (opt-in fetch only — ZERO egress when checkbox is off)
-const SUGGEST_URL='https://gist.githubusercontent.com/johndelay/5127ce55fd95f44e91327fe2edb58f00/raw/';
+const SUGGEST_URL='https://raw.githubusercontent.com/johndelay/jaid-observability-platform/main/suggestions.json';
 // bundled starter list (shown by default; replaced by fetched items when opted-in)
 const SUGGESTIONS=[
   {kind:'article', title:'Surviving Compaction', blurb:'How context compaction silently erases constraints — and how to catch it.', url:'https://thedelay.com/surviving-compaction/', tags:['context-rot','dumb-zone','claude-code']},
@@ -1216,6 +1231,134 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 function openTermsModal(){ const b=document.getElementById('termsbody'); if(b)b.innerHTML=_termsBody(); const m=document.getElementById('termsmodal'); if(m)m.hidden=false; }
 function closeTermsModal(){ const m=document.getElementById('termsmodal'); if(m)m.hidden=true; }
 
+// 🔒 Privacy & your data modal (hamburger menu) — plain-language summary of the no-egress posture, the
+// plaintext-transcripts warning, and what the Export function does. Static text; safe to screenshot.
+function privacyModalBody(){
+  return `
+  <p class="intro"><b>This app is self-hosted and content-free by design.</b> It runs entirely on your own
+    machine(s). By <b>default it makes no connection to any third-party server</b> and never uploads, sells,
+    or exports your data anywhere. The dashboard reads your Claude Code transcripts <b>read-only</b> and
+    computes counts and metrics (tokens, cost, timing) — it does not send your prompts, code, or conversations
+    off your machine.</p>
+  <p class="intro">The only outbound calls are <b>two opt-in features, both off by default</b>, and both are a
+    one-way fetch of a <b>public</b> file that sends nothing about you: the "latest suggestions" reading list
+    and the self-update version check. (Optional semantic search uses your <b>own local</b> Ollama — still
+    nothing leaves your machine.) Answer-from-phone stays on your LAN / Tailscale.</p>
+
+  <h4 style="margin:14px 0 4px">⚠️ Your chat logs are stored in plain text on this computer</h4>
+  <p class="intro">Claude Code itself writes your full conversations as <b>plain-text files</b> under
+    <code>~/.claude/projects/</code> — that's how Claude Code works (the same as your local Claude history).
+    This app <b>reads</b> them but <b>never exports or transmits</b> them. Two things follow:</p>
+  <ul class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li>They are <b>not backed up by this app.</b> If you want to keep them, <b>you</b> must back them up — and
+      because they're plain text, store those backups somewhere safe.</li>
+    <li>If you turn on the 🔍 Search scene, conversation text is also indexed into a <b>separate local
+      database</b> on this machine (opt-in, wipeable in 🧹 Maintenance, and likewise never leaves your computer).</li>
+  </ul>
+
+  <h4 style="margin:14px 0 4px">📦 The Export function (🧹 Maintenance)</h4>
+  <p class="intro"><b>Export</b> writes a single <b>encrypted</b> file (AES-256-GCM, from a passphrase you
+    choose) containing the app's <b>metrics/history</b> — so you can back it up or move it to another machine
+    and <b>Import</b> it there. It's encrypted <i>before</i> it touches disk.</p>
+  <ul class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li><b>Protect the file and its passphrase.</b> Keep the passphrase in a password manager (e.g. 1Password),
+      and don't store it next to the export file.</li>
+    <li><b>Don't lose the passphrase</b> — it's never saved anywhere, so without it the export <b>cannot</b> be
+      recovered.</li>
+    <li>The export is the app's data (counts, cost, history). It does <b>not</b> contain your raw chat
+      transcripts — those are the plain-text files above, which you back up separately.</li>
+  </ul>
+
+  <p class="intro" style="margin-top:14px"><b>In short:</b> nothing leaves your machine unless you explicitly
+    opt in, and even then only a public file is fetched — never your data. Your conversation history lives in
+    plain text on your own disk; backing it up (and keeping any exports + passphrases safe) is up to you.</p>
+  <p class="foot" style="margin-top:8px">Full posture: <code>COMPLIANCE.md</code> · data export details:
+    <code>docs/DATA_EXPORT.md</code> · content/search privacy: <code>docs/CONTENT_PRIVACY.md</code>.</p>`;
+}
+
+// ---- per-scene "?" help bodies (opened by the reusable scene-help modal via [data-schelp]) ----
+function searchHelpBody(){
+  return `
+  <p class="intro"><b>What it is.</b> 🔍 Search is full-text (and optional meaning-based) search over your
+    Claude Code <b>transcripts</b> — recover what you were doing after a compaction, or find a past decision,
+    command, error, or snippet across every session on this machine.</p>
+  <h4 style="margin:14px 0 4px">Why it's hidden by default</h4>
+  <p class="intro">It's the <b>only</b> part of the app that touches your actual conversation <b>content</b> —
+    everything else is content-free — so it's locked down two ways:</p>
+  <ul class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li><b>The scene is off by default.</b> You opt in by switching it on (☰ menu → Scenes → 🔍 Search).</li>
+    <li><b>Nothing is indexed until you enable it</b>, and the index lives in a separate local file
+      (<code>cc-content.db</code>) served on a <b>loopback-only port</b> — the "content firewall." It is
+      <b>never</b> exposed on your LAN or phone, so raw conversation text can't leak to another device.</li>
+    <li>It shows a persistent "⚠ do not screenshot/share" banner, indexes <b>everything incl. tool output (and
+      any secrets that appeared)</b>, <b>auto-deletes after 14 days</b>, and can be wiped in one click (Delete
+      index). Optional secret-redaction / conversation-only modes are available once enabled.</li>
+  </ul>
+  <h4 style="margin:14px 0 4px">How to access it</h4>
+  <ol class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li><b>Turn the scene on:</b> ☰ menu → Scenes → enable <b>🔍 Search</b>. It then joins the swipeable scenes.</li>
+    <li><b>Use it on the dashboard host</b> (the machine whose transcripts these are). Off-host the scene shows
+      a 🔒 <b>Local-only</b> card with a <code>localhost:&lt;port&gt;</code> link — open that <i>on that
+      machine</i>; search deliberately does not work over the network.</li>
+    <li>On first use, click <b>🔓 Enable content search</b> to build the index.</li>
+    <li><i>Optional:</i> meaning-based (semantic) search needs a local <b>Ollama</b> + an embed model
+      (<code>CC_EMBED_MODEL</code>); otherwise keyword search works with no setup. Still your own machine — zero egress.</li>
+  </ol>`;
+}
+function maintHelpBody(){
+  return `
+  <p class="intro">Tools for the app's local data store. All are <b>content-free</b> and read-only on your
+    transcripts — they only touch the app's own metrics database.</p>
+  <ul class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li><b>📦 Export (encrypted)</b> — writes one <b>AES-256-GCM-encrypted</b> file (from a <b>passphrase you
+      choose</b>) of the app's metrics/history, to back up or move to another machine, then <b>Import</b> it
+      there. <b>Protect the file and the passphrase</b> — the passphrase is never stored, so lose it and the
+      export is unrecoverable. It does <b>not</b> contain your raw chat transcripts (those are plain-text files
+      you back up separately — see 🔒 Privacy in the menu). A "plaintext (local only)" option exists for
+      same-machine use.</li>
+    <li><b>💾 Checkpoint WAL</b> — folds the write-ahead log back into the database. Lossless; just bounds the
+      <code>-wal</code> file size.</li>
+    <li><b>🧹 Prune</b> — removes old rate-limit rows (&gt;30 days) and orphaned content-index rows.
+      <b>Previews first</b>, then you confirm.</li>
+    <li><b>♻ Vacuum</b> — reclaims disk space the database holds but isn't using. May take a few seconds; best
+      run on the host.</li>
+  </ul>
+  <p class="foot" style="margin-top:8px">Storage sizes + last-export info are shown at the top of this scene.
+    More: <code>docs/DATA_EXPORT.md</code>, <code>docs/UPGRADE.md</code>.</p>`;
+}
+function costHelpBody(){
+  return `
+  <p class="intro">Where your tokens go and how close you are to your plan limits — <b>per Claude account</b>.</p>
+  <ul class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li><b>Burn rate</b> — recent spend over the current 5-hour block ($/hour + tokens/min). Cache reads are
+      excluded so they don't inflate the rate.</li>
+    <li><b>Today</b> — spend so far today vs your recent daily average (the ▲/▼ arrow).</li>
+    <li><b>Plan-limit gauges</b> — how close you are to your <b>5-hour and 7-day</b> caps, with reset
+      countdowns. "→ extra usage" vs "→ plan limit" depends on whether the account has Extra Usage enabled.
+      (Consumer Pro/Max only; Console/Team accounts show cost without these gauges.)</li>
+    <li><b>Estimate vs authoritative</b> — costs are an <b>estimate</b> from a local price table (marked
+      <code>~</code>); when the statusline feed is present the dashboard shows Claude's <b>exact</b> cost
+      instead. Treat all figures as estimates, not billing.</li>
+  </ul>`;
+}
+function historyHelpBody(){
+  return `
+  <p class="intro">Your usage over time (all content-free).</p>
+  <ul class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li><b>All-time totals</b> + <b>daily spend bars</b> (last ~14 days).</li>
+    <li><b>Top projects</b> by spend.</li>
+    <li><b>Craft signals</b> + a <b>context-trajectory</b> sparkline over the dumb-zone bands, and <b>▲/▼ trend
+      arrows</b> comparing recent activity to your own rolling baseline.</li>
+    <li>Figures are estimates from local data; see 💰 Cost for the per-account / authoritative breakdown.</li>
+  </ul>`;
+}
+const SCENE_HELP={
+  search: {title:'🔍 Search — how this works',        body:searchHelpBody},
+  cost:   {title:'💰 Cost & Accounts — how to read it', body:costHelpBody},
+  history:{title:'📈 History — how to read it',         body:historyHelpBody},
+  maint:  {title:'🧹 Maintenance — what these do',      body:maintHelpBody},
+};
+
 function render(list){
   window._cards={}; window._list=list; list.forEach(s=>window._cards[s.session_id]=s);
   renderAccounts(); renderArchive();
@@ -1309,15 +1452,23 @@ function render(list){
 
 // Paint the Suggestions card into the floating bottom dock, wire its nav/checkbox, then measure its
 // height into --dockh so #app reserves matching bottom padding (last rows clear the overlay).
+let _sgDockHtml=null;
 function paintSuggestDock(){
   if(!suggestDock){ _wireSuggest(); return; }
-  suggestDock.innerHTML=renderSuggestCard();
-  _wireSuggest();
-  try{
-    const card=suggestDock.querySelector('.suggest'), root=document.documentElement;
-    if(root&&root.style&&root.style.setProperty)
-      root.style.setProperty('--dockh',((card&&card.offsetHeight)||0)+'px');
-  }catch(_){}
+  const html=renderSuggestCard();
+  // Only rebuild when the card content actually changed. render() fires every ~5s on SSE; re-setting
+  // innerHTML each tick destroyed the live <input> mid-click, so checking the opt-in box was a coin-flip
+  // ("can't tick the box"). When nothing changed we leave the existing node alone so clicks always land.
+  if(html!==_sgDockHtml){
+    _sgDockHtml=html;
+    suggestDock.innerHTML=html;
+    try{
+      const card=suggestDock.querySelector('.suggest'), root=document.documentElement;
+      if(root&&root.style&&root.style.setProperty)
+        root.style.setProperty('--dockh',((card&&card.offsetHeight)||0)+'px');
+    }catch(_){}
+  }
+  _wireSuggest();   // (re)bind handlers — idempotent (.onX= on the same live nodes); cheap to call each tick
 }
 
 // ---- Cost & Accounts scene: per-account spend + plan rate-limits + Extra-Usage, with a fleet rollup ----
@@ -1329,7 +1480,7 @@ function renderCost(list){
   let pa=perAccount(list, window._cost);
   if(accountFilter) pa=pa.filter(a=>a.account===accountFilter);   // honor the top-bar account filter
   const totalToday=pa.reduce((a,x)=>a+(x.today||0),0) || (today?today.cost_usd:0);
-  let h='<h2>Cost &amp; Accounts</h2>';
+  let h='<div class="schead"><h2>Cost &amp; Accounts</h2><button class="helpq sm" data-schelp="cost" title="How to read this scene">?</button></div>';
   h+='<div class="summary">'
     +`<div class="chip"><b>${totalToday?usd(totalToday):'$0'}</b><span>today · fleet</span></div>`
     +(burn?`<div class="chip"><b>${usd(burn.cost_per_hour)}/h</b><span>burn</span></div>`:'')
@@ -1441,7 +1592,7 @@ function renderHistory(){
   const sc=document.getElementById('scene-history'); if(!sc)return;
   const cost=window._cost||{}, daily=(cost.daily||[]), projects=(cost.projects||[]);
   const allMsgs=projects.reduce((a,p)=>a+(p.messages||0),0);
-  let h='<h2>History</h2>';
+  let h='<div class="schead"><h2>History</h2><button class="helpq sm" data-schelp="history" title="How to read this scene">?</button></div>';
   h+='<div class="summary">'
     +`<div class="chip" title="All-time estimated spend captured by the collector"><b>${cost.total_usd!=null?usd(cost.total_usd):'—'}</b><span>all-time spend</span></div>`
     +`<div class="chip"><b>${allMsgs?fmt(allMsgs):'—'}</b><span>all-time messages</span></div>`
@@ -2010,7 +2161,7 @@ function searchStatsText(st){ st=st||{}; return (st.docs||0).toLocaleString()+' 
 function renderSearch(){
   const sc=document.getElementById('scene-search'); if(!sc)return;
   const m=window._searchMeta;
-  let h='<h2>🔍 Search</h2>';
+  let h='<div class="schead"><h2>🔍 Search</h2><button class="helpq sm" data-schelp="search" title="What is Search? Why is it hidden? How do I use it?">?</button></div>';
   if(!m){ sc.innerHTML=h+'<div class="empty">Loading…</div>'; return; }
   if(!m.local){
     h+='<div class="lcard"><h3>🔒 Local-only</h3>'
@@ -2641,7 +2792,7 @@ function maintRow(label,val){ return '<div class="mrow"><span>'+esc(label)+'</sp
 function renderMaint(){
   const sc=document.getElementById('scene-maint'); if(!sc)return;
   const m=window._maint;
-  let h='<h2>🧹 Maintenance</h2>';
+  let h='<div class="schead"><h2>🧹 Maintenance</h2><button class="helpq sm" data-schelp="maint" title="What do these actions do?">?</button></div>';
   if(!m){ sc.innerHTML=h+'<div class="empty">Loading…</div>'; return; }
   const st=m.stats||{};
   const blk=(name,b)=>{ if(!b)return''; const s=b.sizes||{}; const rows=b.rows||{};
@@ -2795,6 +2946,8 @@ const carousel=document.getElementById('carousel'), track=document.getElementByI
       mcphelp=document.getElementById('mcphelp'),
       helpmodal=document.getElementById('helpmodal'),
       coachmodal=document.getElementById('coachmodal'),
+      privacymodal=document.getElementById('privacymodal'),
+      schelp=document.getElementById('schelp'),
       ctxhelp=document.getElementById('ctxhelp'),
       daypop=document.getElementById('daypop'),
       convo=document.getElementById('convo'),
@@ -2916,6 +3069,17 @@ if(coachmodal)coachmodal.addEventListener('click',e=>{
   copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
     if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
 });
+// 🔒 Privacy modal — static body; no copy buttons, just backdrop/✕/Esc to close
+function openPrivacyModal(){ const b=document.getElementById('privacymodalbody'); if(b)b.innerHTML=privacyModalBody(); if(privacymodal)privacymodal.hidden=false; }
+function closePrivacyModal(){ if(privacymodal)privacymodal.hidden=true; }
+elClick('privacymodalclose',closePrivacyModal);
+if(privacymodal)privacymodal.addEventListener('click',e=>{ if(e.target===privacymodal)closePrivacyModal(); });
+// reusable per-scene "?" help modal — any [data-schelp="<key>"] button opens SCENE_HELP[key]
+function openSceneHelp(key){ const h=SCENE_HELP[key]; if(!h)return; const t=document.getElementById('schelptitle'); if(t)t.textContent=h.title; const b=document.getElementById('schelpbody'); if(b)b.innerHTML=h.body(); if(schelp)schelp.hidden=false; }
+function closeSceneHelp(){ if(schelp)schelp.hidden=true; }
+elClick('schelpclose',closeSceneHelp);
+if(schelp)schelp.addEventListener('click',e=>{ if(e.target===schelp)closeSceneHelp(); });
+document.addEventListener('click',e=>{ const q=e.target.closest&&e.target.closest('[data-schelp]'); if(q)openSceneHelp(q.getAttribute('data-schelp')); });
 function openCtxHelp(){ const b=document.getElementById('ctxhelpbody'); if(b)b.innerHTML=ctxHelpBody(); if(ctxhelp)ctxhelp.hidden=false; }
 function closeCtxHelp(){ if(ctxhelp)ctxhelp.hidden=true; }
 elClick('ctxhelpclose',closeCtxHelp);
@@ -2937,6 +3101,7 @@ elClick('menuclose',closeMenu);
 if(menu)menu.addEventListener('click',e=>{
   if(e.target.closest&&e.target.closest('[data-help-open]')){ closeMenu(); openHelpModal(); return; }
   if(e.target.closest&&e.target.closest('[data-coach-open]')){ closeMenu(); openCoachModal(); return; }
+  if(e.target.closest&&e.target.closest('[data-privacy-open]')){ closeMenu(); openPrivacyModal(); return; }
   if(e.target===menu)closeMenu();
 });
 if(menuscenes)menuscenes.addEventListener('click',e=>{
@@ -2963,8 +3128,8 @@ if(carousel){
 // --- keyboard (← → between scenes; ESC closes menu/detail) — window events guarded for the smoke sandbox ---
 if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){ if(coachmodal&&!coachmodal.hidden){closeCoachModal();return;} if(helpmodal&&!helpmodal.hidden){closeHelpModal();return;} if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
-    if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(helpmodal&&!helpmodal.hidden)||(coachmodal&&!coachmodal.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
+    if(e.key==='Escape'){ if(schelp&&!schelp.hidden){closeSceneHelp();return;} if(privacymodal&&!privacymodal.hidden){closePrivacyModal();return;} if(coachmodal&&!coachmodal.hidden){closeCoachModal();return;} if(helpmodal&&!helpmodal.hidden){closeHelpModal();return;} if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
+    if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(helpmodal&&!helpmodal.hidden)||(coachmodal&&!coachmodal.hidden)||(privacymodal&&!privacymodal.hidden)||(schelp&&!schelp.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
     if(e.key==='ArrowRight')goScene(sceneIdx+1);
     else if(e.key==='ArrowLeft')goScene(sceneIdx-1);
   });

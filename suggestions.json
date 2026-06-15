@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "_comment": "Public suggestions/reading list fetched by the dashboard ONLY when a user opts in via the 'latest suggestions' checkbox (off by default). Served raw from this repo's main branch (SUGGEST_URL in web/index.html). No user data is ever sent — this is a one-way GET of a public file. Edit + push to main to update what opted-in users see; the bundled SUGGESTIONS list in web/index.html is the offline fallback. Each item: {title, blurb, url, tags}.",
+  "items": [
+    {
+      "title": "Surviving Compaction",
+      "blurb": "How context compaction silently erases constraints — and how to catch it.",
+      "url": "https://thedelay.com/surviving-compaction/",
+      "tags": ["context-rot", "dumb-zone", "claude-code"]
+    },
+    {
+      "title": "Why I Treat My AI Context Like Infrastructure",
+      "blurb": "Persistent context files so AI carries across sessions, not from zero.",
+      "url": "https://thedelay.com/ai-context-infrastructure/",
+      "tags": ["claude-code", "general"]
+    },
+    {
+      "title": "Give Claude a Memory",
+      "blurb": "Persistent memory for Claude in 15 minutes with one plain-text file.",
+      "url": "https://thedelay.com/give-claude-a-memory/",
+      "tags": ["claude-code", "memory"]
+    },
+    {
+      "title": "So You're Good at AI? Build This Skill Before You Get Sued",
+      "blurb": "Sanitize AI output before publishing so you don't leak private details.",
+      "url": "https://thedelay.com/ai-sanitization-skill/",
+      "tags": ["security", "general"]
+    }
+  ]
+}

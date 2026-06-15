@@ -1102,6 +1102,40 @@ check('coachModalBody: names JAID Coach (not "Claude Coach"), shows /jaid-coach 
   ctx.openCoachModal(); ctx.closeCoachModal();   // must not throw in the stubbed DOM
 });
 
+// 🔒 Privacy modal (hamburger menu) — no-egress posture + plaintext-transcripts warning + Export guidance
+check('privacyModalBody: no-egress + plaintext-log warning + export/backup guidance; open/close safe', () => {
+  if (typeof ctx.privacyModalBody !== 'function') throw new Error('privacyModalBody() not defined');
+  const body = ctx.privacyModalBody();
+  if (!/no connection to any third-party|never uploads|content-free/i.test(body)) throw new Error('privacy: no-egress / no-export framing missing');
+  if (!/plain.?text/i.test(body)) throw new Error('privacy: plaintext-transcripts warning missing');
+  if (!/back (it|them) up|back up/i.test(body)) throw new Error('privacy: "you must back them up" guidance missing');
+  if (!/passphrase/i.test(body) || !/Export/.test(body)) throw new Error('privacy: Export + passphrase-protection guidance missing');
+  if (/[`]/.test(body.replace(/<[^>]*>/g, ''))) throw new Error('privacy: backtick in body would break the template literal');
+  if (typeof ctx.openPrivacyModal !== 'function' || typeof ctx.closePrivacyModal !== 'function') throw new Error('open/closePrivacyModal not defined');
+  ctx.openPrivacyModal(); ctx.closePrivacyModal();   // must not throw in the stubbed DOM
+});
+
+// per-scene "?" help (Search/Cost/History/Maintenance) via the reusable scene-help modal
+check('scene "?" help: bodies cover their scene; Cost/History render the trigger; open/close safe', () => {
+  const s = ctx.searchHelpBody();
+  if (!/hidden by default/i.test(s)) throw new Error('search help: "why hidden by default" missing');
+  if (!/loopback|content firewall|Local-only/i.test(s)) throw new Error('search help: local-only/firewall missing');
+  if (!/enable|☰ menu/i.test(s)) throw new Error('search help: "how to access / enable" missing');
+  const mz = ctx.maintHelpBody();
+  if (!/Export/.test(mz) || !/passphrase/i.test(mz)) throw new Error('maint help: export/passphrase missing');
+  if (!/Prune/i.test(mz) || !/Vacuum/i.test(mz)) throw new Error('maint help: prune/vacuum missing');
+  if (!/burn rate/i.test(ctx.costHelpBody())) throw new Error('cost help: burn rate missing');
+  if (!/trend|baseline/i.test(ctx.historyHelpBody())) throw new Error('history help: trend/baseline missing');
+  // Cost + History scenes render their "?" trigger (both render on every render())
+  ctx.render(STATE);
+  if (!document.getElementById('scene-cost').innerHTML.includes('data-schelp="cost"')) throw new Error('Cost scene missing its "?" button');
+  if (!document.getElementById('scene-history').innerHTML.includes('data-schelp="history"')) throw new Error('History scene missing its "?" button');
+  // openSceneHelp must be safe for every key in the stub
+  if (typeof ctx.openSceneHelp !== 'function') throw new Error('openSceneHelp not defined');
+  ['search','cost','history','maint'].forEach(k => ctx.openSceneHelp(k));
+  ctx.closeSceneHelp();
+});
+
 // 9m) 🧠 Coach scene (V8 Slice A): Claude Code handoff + content-free bundle + honesty framing + empty/null
 check('renderCoach: Claude Code handoff + bundle + honesty banner + empty/null states', () => {
   if (typeof ctx.renderCoach !== 'function') throw new Error('renderCoach() not defined');
@@ -1340,11 +1374,11 @@ check('suggest: default state has suggest.fetch unchecked (no network call by de
 // ---- suggest: opt-in fetch tests ----
 
 check('suggest: zero-egress invariant — fetch NOT called when suggest.fetch is off (default)', () => {
-  // Record whether the gist URL was fetched while suggest.fetch=false (the default)
+  // Record whether the suggestions URL was fetched while suggest.fetch=false (the default)
   let fetchCalled = false;
   const origFetch = sandbox.fetch;
   sandbox.fetch = async (url) => {
-    if (String(url).includes('gist.githubusercontent.com')) fetchCalled = true;
+    if (String(url).includes('jaid-observability-platform')) fetchCalled = true;
     return origFetch(url);
   };
   try {
@@ -1352,7 +1386,7 @@ check('suggest: zero-egress invariant — fetch NOT called when suggest.fetch is
   } finally {
     sandbox.fetch = origFetch;
   }
-  if (fetchCalled) throw new Error('fetch was called to the gist URL when suggest.fetch is off — zero-egress invariant violated');
+  if (fetchCalled) throw new Error('fetch was called to the suggestions URL when suggest.fetch is off — zero-egress invariant violated');
 });
 
 check('suggest: opted-in → _sgFetch() calls fetch with SUGGEST_URL', () => {
@@ -1369,8 +1403,9 @@ check('suggest: opted-in → _sgFetch() calls fetch with SUGGEST_URL', () => {
     sandbox.fetch = origFetch;
   }
   if (!fetchedUrl) throw new Error('fetch was never called after _sgFetch()');
-  if (!String(fetchedUrl).includes('gist.githubusercontent.com')) {
-    throw new Error('fetch was called but not with the gist URL: ' + fetchedUrl);
+  // the suggestions list is hosted in the JAID repo (raw.githubusercontent.com/.../jaid-observability-platform/...)
+  if (!String(fetchedUrl).includes('jaid-observability-platform')) {
+    throw new Error('fetch was called but not at the JAID-repo suggestions URL: ' + fetchedUrl);
   }
 });
 
@@ -1418,7 +1453,7 @@ check('suggest: item with javascript: url is dropped by _sgSanitizeItem (not ren
 check('suggest: malformed/failed fetch → card still renders bundled list, no throw', () => {
   const origFetch = sandbox.fetch;
   sandbox.fetch = async (url) => {
-    if (String(url).includes('gist.githubusercontent.com')) throw new Error('network error');
+    if (String(url).includes('jaid-observability-platform')) throw new Error('network error');
     return origFetch(url);
   };
   ctx._sgSetFetched(null);  // ensure no cached items from earlier tests
