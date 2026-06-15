@@ -106,6 +106,11 @@ pointed at it — it POSTs to `/ingest`:
 CC_COLLECTOR_URL=http://<dashboard-host>:8099/ingest CC_HOST=$(hostname) python3 watcher.py
 ```
 
+For a persistent service, `deploy-watcher.sh` installs a `systemd --user` unit (Linux). A
+**Mac running Claude Desktop** is a watcher-only host with its own quirks (transcripts live under
+`~/Library/Application Support/Claude/…`, no turnkey installer, Full Disk Access) — see the
+agent-followable [`docs/WATCHER_MACOS.md`](docs/WATCHER_MACOS.md).
+
 ## In-terminal statusline + state hooks (opt-in, per host)
 
 Two **Claude Code `settings.json`** entries that run inside your terminal. **Neither is installed by default**
@@ -151,6 +156,8 @@ exact JSON shape: [`docs/COMPONENTS.md`](docs/COMPONENTS.md) (Layer 3).
 | `CC_SSE_INTERVAL` | 5 | server | how often the live stream checks for changes (sends only on change) |
 | `CC_SSE_HEARTBEAT` | 30 | server | keep-alive ping when nothing changed |
 | `CC_COLLECTOR_URL` | http://localhost:8099/ingest | watcher | where to POST (remote mode) |
+| `CC_PROJECTS_DIR` | ~/.claude/projects | watcher | transcript root to watch |
+| `CC_PROJECTS_DIRS` | (unset) | watcher | comma-sep roots; **replaces** the default (needed on macOS for Claude Desktop — see `docs/WATCHER_MACOS.md`) |
 | `CC_HOST` | hostname | both | label for this machine |
 | `CC_POLL_INTERVAL` | 10 | both | seconds between transcript scans (kept light — context creeps slowly) |
 | `CC_ACTIVE_HOURS` | 6 | both | only report sessions touched within this window |
