@@ -1115,6 +1115,27 @@ check('privacyModalBody: no-egress + plaintext-log warning + export/backup guida
   ctx.openPrivacyModal(); ctx.closePrivacyModal();   // must not throw in the stubbed DOM
 });
 
+// per-scene "?" help (Search/Cost/History/Maintenance) via the reusable scene-help modal
+check('scene "?" help: bodies cover their scene; Cost/History render the trigger; open/close safe', () => {
+  const s = ctx.searchHelpBody();
+  if (!/hidden by default/i.test(s)) throw new Error('search help: "why hidden by default" missing');
+  if (!/loopback|content firewall|Local-only/i.test(s)) throw new Error('search help: local-only/firewall missing');
+  if (!/enable|☰ menu/i.test(s)) throw new Error('search help: "how to access / enable" missing');
+  const mz = ctx.maintHelpBody();
+  if (!/Export/.test(mz) || !/passphrase/i.test(mz)) throw new Error('maint help: export/passphrase missing');
+  if (!/Prune/i.test(mz) || !/Vacuum/i.test(mz)) throw new Error('maint help: prune/vacuum missing');
+  if (!/burn rate/i.test(ctx.costHelpBody())) throw new Error('cost help: burn rate missing');
+  if (!/trend|baseline/i.test(ctx.historyHelpBody())) throw new Error('history help: trend/baseline missing');
+  // Cost + History scenes render their "?" trigger (both render on every render())
+  ctx.render(STATE);
+  if (!document.getElementById('scene-cost').innerHTML.includes('data-schelp="cost"')) throw new Error('Cost scene missing its "?" button');
+  if (!document.getElementById('scene-history').innerHTML.includes('data-schelp="history"')) throw new Error('History scene missing its "?" button');
+  // openSceneHelp must be safe for every key in the stub
+  if (typeof ctx.openSceneHelp !== 'function') throw new Error('openSceneHelp not defined');
+  ['search','cost','history','maint'].forEach(k => ctx.openSceneHelp(k));
+  ctx.closeSceneHelp();
+});
+
 // 9m) 🧠 Coach scene (V8 Slice A): Claude Code handoff + content-free bundle + honesty framing + empty/null
 check('renderCoach: Claude Code handoff + bundle + honesty banner + empty/null states', () => {
   if (typeof ctx.renderCoach !== 'function') throw new Error('renderCoach() not defined');
