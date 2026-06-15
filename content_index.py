@@ -21,6 +21,7 @@ import time
 import sqlite3
 import hashlib
 import threading
+import fsperms
 from datetime import datetime
 
 import redact
@@ -182,7 +183,7 @@ class ContentIndex:
         self.host = host
         d = os.path.dirname(path)
         if d:
-            os.makedirs(d, exist_ok=True)
+            fsperms.secure_dir(d)        # owner-only dir (0700 POSIX) so nothing inside is world-readable
         self._lock = threading.Lock()
         self._emb_cache = None   # (uuids:list, matrix:np.ndarray) of normalized embeddings; rebuilt lazily
         self._db = sqlite3.connect(path, check_same_thread=False)
@@ -193,13 +194,10 @@ class ContentIndex:
             self._db.execute("PRAGMA busy_timeout=5000")
             self._db.executescript(_SCHEMA)
             self._run_migrations()
-        # This DB holds RAW transcript text — keep it owner-only (sqlite/WAL otherwise create 0644).
-        for ext in ("", "-wal", "-shm"):
-            try:
-                os.chmod(path + ext, 0o600)
-            except OSError:
-                pass
             self._db.commit()
+        # This DB holds RAW transcript text — keep it owner-only (sqlite/WAL otherwise create 0644 on POSIX;
+        # no-op on Windows, where the user-profile ACL governs access). Covers the -wal/-shm sidecars too.
+        fsperms.secure_file(path, path + "-wal", path + "-shm")
 
     def _schema_version(self):
         """Current stored schema version (0 for a pre-versioning DB). Caller holds self._lock; meta exists."""

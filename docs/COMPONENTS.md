@@ -249,8 +249,9 @@ ones you'll actually touch:
 ### Security
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `CC_ACCESS_PIN` | (empty) | PIN to view the UI + gate mutating actions; **required for answer-from-phone** |
-| `CC_INGEST_TOKEN` | (empty) | shared token remote watchers/probes must send (`X-CC-Token`) |
+| `CC_ACCESS_PIN` | (empty) | PIN to view the UI + gate mutating actions; **required for answer-from-phone**. Use a long, non-numeric secret (failed logins are per-IP rate-limited) |
+| `CC_INGEST_TOKEN` | (empty) | shared token remote watchers/probes must send (`X-CC-Token`); **also required for answer-from-phone** (the reply/coach control-plane refuses when unset) |
+| `CC_AUTH_SALT` | (empty) | rotate to invalidate all login cookies (log-out-all / revoke a leaked cookie) without changing the PIN |
 
 ### Feature toggles / integrations
 | Var | Default | Meaning |
@@ -267,6 +268,23 @@ ones you'll actually touch:
 | `CC_DB_DIR` | `~/.cache/cc-observability` | usage/cost history DB (read-write) |
 | `CC_STATE_DIR_HOST` | `~/.cache/cc-dashboard` | statusline/state snapshots (read-only mount) |
 | `CC_EXPORT_DIR_HOST` | `~/cc-observability-exports` | encrypted export bundles land here |
+
+### File permissions (sensitive data at rest)
+Two files hold sensitive data: **`cc-content.db`** (raw transcript text, only if you enable Search) and
+**`cc-usage.db`** (account identifiers + the coach narrative). Export bundles are encrypted by default.
+
+- **Linux / macOS:** the app creates its data dirs `0700` and these DBs `0600`, and `main()` sets
+  `umask(0o077)` so anything else it writes (incl. SQLite `-wal`/`-shm` and exports) is owner-only too.
+  A startup check warns if `.env` (which holds the PIN/token) is group/other-readable — fix with
+  `chmod 600 .env`.
+- **Windows:** POSIX modes don't apply — `os.chmod` only toggles the read-only bit, it can't restrict
+  "other users." Access is governed by NTFS ACLs. Files under your user profile (the default
+  `~/.cache/...` location) inherit an ACL granting only **you + SYSTEM + Administrators**, so they are
+  **not** world-readable by default. The one thing to avoid: pointing `CC_CONTENT_DB_PATH` / `CC_DB_DIR` /
+  `CC_EXPORT_DIR` at a **shared or world-readable location** (a shared drive, a world-readable folder) —
+  there, Windows won't protect them and the app can't either. Keep sensitive data under your profile.
+- **Docker:** files live in the container (single user) on a host-mounted volume; perms follow the host
+  mount. Same rule: don't mount the data volume into a world-readable host path.
 
 > **Advanced tuning** (poll intervals, staleness windows, timeouts, tail/cap sizes — `CC_POLL_INTERVAL`,
 > `CC_STALE_SECS`, `CC_SSE_INTERVAL`, `CC_WAITING_RECENT_SECS`, `CC_SUBAGENT_*`, `CC_HOST_*_SECS`, the coach/

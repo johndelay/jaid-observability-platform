@@ -2,6 +2,7 @@
 Run: python3 -m unittest discover -s tests   (or via ./verify.sh)"""
 import json
 import os
+import stat
 import sys
 import tempfile
 import time
@@ -1555,6 +1556,48 @@ class SecurityHardeningTests(unittest.TestCase):
         self.assertEqual(self._get("/outbox?host=h")[0], 401)            # no token header
         self.assertEqual(self._get("/outbox?host=h", token="wrong")[0], 401)
         self.assertEqual(self._get("/outbox?host=h", token="tok-xyz")[0], 200)   # authed → empty queue
+
+
+class FsPermsTests(unittest.TestCase):
+    """Cross-platform file/dir permission hardening (fsperms). POSIX assertions are skipped on Windows,
+    where os.chmod can't express 'other users' and the per-user-profile ACL governs access instead."""
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    @unittest.skipIf(os.name == "nt", "POSIX mode bits not meaningful on Windows")
+    def test_secure_dir_is_owner_only(self):
+        import fsperms
+        d = os.path.join(self.dir, "sub")
+        fsperms.secure_dir(d)
+        self.assertEqual(stat.S_IMODE(os.stat(d).st_mode), 0o700)
+
+    @unittest.skipIf(os.name == "nt", "POSIX mode bits not meaningful on Windows")
+    def test_secure_file_and_is_exposed(self):
+        import fsperms
+        p = os.path.join(self.dir, "f")
+        with open(p, "w") as f:
+            f.write("x")
+        os.chmod(p, 0o644)
+        self.assertTrue(fsperms.is_exposed(p))                 # 0644 → group/other readable
+        fsperms.secure_file(p)
+        self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
+        self.assertFalse(fsperms.is_exposed(p))
+
+    @unittest.skipIf(os.name == "nt", "POSIX mode bits not meaningful on Windows")
+    def test_store_db_created_owner_only(self):
+        p = os.path.join(self.dir, "u.db")
+        s = store.Store(p)
+        s.close()
+        self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)   # account emails + coach narrative live here
+
+    def test_secure_helpers_safe_on_missing_and_memory(self):
+        import fsperms
+        fsperms.secure_file(os.path.join(self.dir, "nope"))    # missing → no throw
+        fsperms.secure_file(":memory:")                        # sqlite memory sentinel → no throw
+        self.assertFalse(fsperms.is_exposed(os.path.join(self.dir, "nope")))
 
 
 class CraftScoreTests(unittest.TestCase):

@@ -26,6 +26,7 @@ from urllib.parse import urlparse, parse_qs
 
 import version
 import crypto
+import fsperms
 
 # ---- config (env-overridable) ------------------------------------------------
 PORT             = int(os.environ.get("CC_PORT", "8099"))
@@ -1753,6 +1754,14 @@ def maintenance_loop():
 
 def main():
     global _store, _content
+    # POSIX blanket: everything this process creates (DBs, SQLite -wal/-shm, exports) is owner-only by
+    # default — no per-file chmod race, and covers files we don't explicitly touch. (Windows ignores umask;
+    # there the per-user-profile ACL governs access — see fsperms.py.)
+    if os.name != "nt":
+        os.umask(0o077)
+    # Nudge if the secrets file is group/other-readable (it holds CC_ACCESS_PIN / CC_INGEST_TOKEN). POSIX-only.
+    fsperms.warn_if_exposed(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+                            ".env (CC_ACCESS_PIN / CC_INGEST_TOKEN)", log=lambda m: print(m, flush=True))
     # Misconfig guard: equal ports would collapse the content firewall onto the LAN listener (the
     # local-only check is `bound_port == CONTENT_PORT`, which would then be true for 0.0.0.0:PORT too).
     if PORT == CONTENT_PORT:

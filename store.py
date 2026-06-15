@@ -18,6 +18,7 @@ import os
 import sqlite3
 import threading
 import time
+import fsperms
 from datetime import date, datetime, timedelta, timezone
 
 import costing
@@ -295,7 +296,7 @@ class Store:
         self._pre_migrate_hook = pre_migrate_hook   # called before a REAL migration advances (Slice 3 backup)
         d = os.path.dirname(path)
         if d:
-            os.makedirs(d, exist_ok=True)
+            fsperms.secure_dir(d)        # owner-only dir (0700 POSIX)
         # self._db is the single WRITE connection (serialized by self._lock). Reads use short-lived
         # connections (see _read_conn) so they do NOT contend on the write lock — WAL allows unlimited
         # concurrent readers. In-memory DBs (CLI/tests) can't be reopened, so reads fall back to the shared
@@ -314,6 +315,8 @@ class Store:
             self._db.executescript(_SCHEMA)
             self._run_migrations()
             self._db.commit()
+        # Holds account identifiers + the coach narrative — keep it owner-only (POSIX; no-op on Windows).
+        fsperms.secure_file(path, path + "-wal", path + "-shm")
 
     def _schema_version(self):
         """Current stored schema version (0 for a pre-versioning DB). Caller holds self._lock; meta exists."""

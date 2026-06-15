@@ -10,7 +10,7 @@ RUN apk add --no-cache tzdata
 RUN pip install --no-cache-dir numpy cryptography
 
 WORKDIR /app
-COPY server.py watcher.py costing.py store.py craft.py medals.py coach.py content_index.py version.py maintenance.py redact.py portable.py crypto.py ./
+COPY server.py watcher.py costing.py store.py craft.py medals.py coach.py content_index.py version.py maintenance.py redact.py portable.py crypto.py fsperms.py ./
 COPY web ./web
 
 # Single self-contained process: serve the dashboard AND scan local transcripts in-process.
