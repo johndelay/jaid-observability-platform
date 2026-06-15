@@ -252,7 +252,7 @@ Docker it defaults under `~/.cache/cc-observability/`.
 
 ## Status
 
-Well past the original MVP: a multi-scene PWA (see [`docs/COMPONENTS.md`](docs/COMPONENTS.md) for the 14
+Well past the original MVP: a multi-scene PWA (see [`docs/COMPONENTS.md`](docs/COMPONENTS.md) for the 9
 scenes), persisted cost/history, Craft score, efficiency + MCP-cost coaching, local transcript search
 (keyword + optional Ollama semantic), multi-host fleet view, answer-from-phone, encrypted export/import, and
 an opt-in self-update check. Self-hosted and content-free throughout. **Deferred (by design):** rollup

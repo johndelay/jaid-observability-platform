@@ -177,87 +177,82 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
   await check('nav: ► button does not shift horizontally when the scene label changes width', async () => {
     // #navlabel sits left of the dots + ► — if it resizes per scene it shoves ► out from under the cursor.
     // A fixed min-width + centered label keeps ►'s x-position constant. Measure it on a short label (Triage)
-    // vs the longest (Efficiency) and assert the button hasn't moved.
+    // vs the longest visible ("About / Help") and assert the button hasn't moved.
     const measure = async (sceneIdx) => page.evaluate((i) => {
       window.goScene && window.goScene(i);
       const b = document.getElementById('navnext').getBoundingClientRect();
       return { left: Math.round(b.left), label: (document.getElementById('navlabel') || {}).textContent || '' };
     }, sceneIdx);
     const triage = await measure(0);                 // "TRIAGE …" (short)
-    const eff = await measure(6);                     // "EFFICIENCY …" (longest)
-    if (triage.label === eff.label) throw new Error('scene label did not change between scenes 0 and 6 — test invalid');
-    if (Math.abs(triage.left - eff.left) > 1)
-      throw new Error(`► button moved ${Math.abs(triage.left - eff.left)}px when label changed ("${triage.label}" left=${triage.left} vs "${eff.label}" left=${eff.left}) — layout shift not fixed`);
+    const longLbl = await measure(7);                // "ABOUT / HELP …" (longest visible scene)
+    if (triage.label === longLbl.label) throw new Error('scene label did not change between scenes 0 and 7 — test invalid');
+    if (Math.abs(triage.left - longLbl.left) > 1)
+      throw new Error(`► button moved ${Math.abs(triage.left - longLbl.left)}px when label changed ("${triage.label}" left=${triage.left} vs "${longLbl.label}" left=${longLbl.left}) — layout shift not fixed`);
     await page.evaluate(() => window.goScene && window.goScene(0)); // restore
   });
 
-  await check('carousel transport: Cost + History + Trophy + Craft + Efficiency + Fleet + Archive + Maintenance + About + Help scenes reachable & populated', async () => {
-    // scene 1 = Cost, 2 = History, 3 = Trophy, 4 = Craft, 5 = Coach, 6 = Efficiency, 7 = MCP, 8 = Fleet, 9 = Archive, 10 = Maintenance, 11 = About, 12 = Help
+  await check('carousel transport: Cost + Reports + Coach-hub + MCP + Fleet + Maintenance + About/Help reachable & populated', async () => {
+    // visible swipe order (Search is opt-in OFF): 0 Triage, 1 Cost, 2 Reports, 3 Coach hub, 4 MCP, 5 Fleet, 6 Maintenance, 7 About/Help
     await page.evaluate(() => window.goScene && window.goScene(1));
     await page.waitForFunction(() => {
       const t = document.getElementById('track'), cost = document.getElementById('scene-cost');
       return t && /translateX\(-(?!0px)/.test(t.style.transform) && cost && /Cost &amp; Accounts|Cost & Accounts/.test(cost.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
+    // Reports = History stacked above the Trophy Room — both inner divs populated by their own render fns
     await page.evaluate(() => window.goScene && window.goScene(2));
     await page.waitForFunction(() => {
-      const hist = document.getElementById('scene-history');
-      return hist && /History/.test(hist.innerHTML) && !/Loading history/.test(hist.innerHTML);
+      const rep = document.getElementById('scene-reports');
+      const hist = document.getElementById('scene-history'), tr = document.getElementById('scene-trophy');
+      return rep && hist && /History/.test(hist.innerHTML) && !/Loading history/.test(hist.innerHTML)
+        && tr && /Trophy Room/.test(tr.innerHTML) && !/Loading trophy/.test(tr.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
+    // Coach hub = Score / Coach / Savings tabs; each panel populated by its own render fn (innerHTML readable even when hidden)
     await page.evaluate(() => window.goScene && window.goScene(3));
     await page.waitForFunction(() => {
-      const tr = document.getElementById('scene-trophy');
-      return tr && /Trophy Room/.test(tr.innerHTML) && !/Loading trophy/.test(tr.innerHTML);
+      const cr = document.getElementById('scene-craft'), co = document.getElementById('scene-coach'), eff = document.getElementById('scene-efficiency');
+      return cr && /Craft Score/.test(cr.innerHTML) && co && /Coach/.test(co.innerHTML) && eff && /Efficiency/.test(eff.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
     await page.evaluate(() => window.goScene && window.goScene(4));
-    await page.waitForFunction(() => {
-      const cr = document.getElementById('scene-craft');
-      return cr && /Craft Score/.test(cr.innerHTML) && !/Loading Craft/.test(cr.innerHTML);
-    }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(5));
-    await page.waitForFunction(() => {
-      const co = document.getElementById('scene-coach');
-      return co && /Coach/.test(co.innerHTML) && !/Loading coach/.test(co.innerHTML);
-    }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(6));
-    await page.waitForFunction(() => {
-      const eff = document.getElementById('scene-efficiency');
-      return eff && /Efficiency/.test(eff.innerHTML) && !/Loading efficiency/.test(eff.innerHTML);
-    }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(7));
     await page.waitForFunction(() => {
       const mcp = document.getElementById('scene-mcp');
       return mcp && /MCP tax/.test(mcp.innerHTML) && !/Loading MCP/.test(mcp.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(8));
+    await page.evaluate(() => window.goScene && window.goScene(5));
     await page.waitForFunction(() => {
       const fleet = document.getElementById('scene-fleet');
       return fleet && /Fleet/.test(fleet.innerHTML) && !/Loading fleet/.test(fleet.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(9));
-    await page.waitForFunction(() => {
-      const arch = document.getElementById('scene-archive');
-      return arch && /Archive/.test(arch.innerHTML);
-    }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(10));
+    await page.evaluate(() => window.goScene && window.goScene(6));
     await page.waitForFunction(() => {
       const mt = document.getElementById('scene-maint');
       return mt && /Maintenance/.test(mt.innerHTML) && /Storage/.test(mt.innerHTML) && !/Loading maintenance/.test(mt.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(11));
+    await page.evaluate(() => window.goScene && window.goScene(7));
     await page.waitForFunction(() => {
-      const ab = document.getElementById('scene-about');
-      return ab && /About/.test(ab.innerHTML) && !/Loading/.test(ab.innerHTML);
-    }, undefined, { timeout: 4000, polling: 100 });
-    await page.evaluate(() => window.goScene && window.goScene(12));
-    await page.waitForFunction(() => {
-      const help = document.getElementById('scene-help');
-      return help && help.textContent.includes('context window');
+      const help = document.getElementById('scene-help'), ab = document.getElementById('scene-about');
+      return help && help.textContent.includes('context window') && ab && /About/.test(ab.innerHTML) && !/Loading/.test(ab.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
     await page.evaluate(() => window.goScene && window.goScene(0)); // back to Triage for the screenshot
   });
 
+  await check('Coach hub tabs: Score / Coach / Savings switch the visible panel', async () => {
+    await page.evaluate(() => window.goScene && window.goScene(3));
+    await page.waitForFunction(() => { const cr = document.getElementById('scene-craft'); return cr && !cr.hidden; },
+      undefined, { timeout: 4000, polling: 100 });   // default tab = Score (craft) visible
+    await page.$eval('#coachhub-tabs [data-hubtab="coach"]', el => el.click());
+    await page.waitForFunction(() => {
+      const cr = document.getElementById('scene-craft'), co = document.getElementById('scene-coach');
+      return co && !co.hidden && cr && cr.hidden;
+    }, undefined, { timeout: 3000, polling: 100 });
+    await page.$eval('#coachhub-tabs [data-hubtab="efficiency"]', el => el.click());
+    await page.waitForFunction(() => { const eff = document.getElementById('scene-efficiency'); return eff && !eff.hidden; },
+      undefined, { timeout: 3000, polling: 100 });
+    await page.$eval('#coachhub-tabs [data-hubtab="craft"]', el => el.click());   // restore Score
+    await page.evaluate(() => window.goScene && window.goScene(0));
+  });
+
   await check('Trophy calendar: clicking an active day square opens the day-stats popup', async () => {
-    await page.evaluate(() => window.goScene && window.goScene(3));   // Trophy
+    await page.evaluate(() => window.goScene && window.goScene(2));   // Reports (Trophy Room lives here now)
     await page.waitForFunction(() => {
       const tr = document.getElementById('scene-trophy');
       return tr && /Trophy Room/.test(tr.innerHTML) && !/Loading trophy/.test(tr.innerHTML);
@@ -301,7 +296,7 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
   });
 
   await check('🧩 MCP "?" opens the help modal; ✕ and Escape close it', async () => {
-    await page.evaluate(() => window.goScene && window.goScene(7));
+    await page.evaluate(() => window.goScene && window.goScene(4));
     await page.waitForFunction(() => {
       const mcp = document.getElementById('scene-mcp');
       return mcp && /MCP tax/.test(mcp.innerHTML) && !/Loading MCP/.test(mcp.innerHTML);
@@ -327,7 +322,7 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
   });
 
   await check('Trophy scene renders all-time totals + a streak (or an honest empty state)', async () => {
-    await page.evaluate(() => window.goScene && window.goScene(3));
+    await page.evaluate(() => window.goScene && window.goScene(2));   // Reports
     await page.waitForFunction(() => {
       const tr = document.getElementById('scene-trophy'); if (!tr) return false;
       const h = tr.innerHTML;
@@ -339,7 +334,7 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
   });
 
   await check('Craft scene renders a score breakdown (or an honest unscored state)', async () => {
-    await page.evaluate(() => window.goScene && window.goScene(4));
+    await page.evaluate(() => window.goScene && window.goScene(3));   // Coach hub (Score tab)
     await page.waitForFunction(() => {
       const cr = document.getElementById('scene-craft'); if (!cr) return false;
       const h = cr.innerHTML;
@@ -352,7 +347,7 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
   });
 
   await check('Coach scene renders the Claude Code handoff + content-free honesty banner', async () => {
-    await page.evaluate(() => window.goScene && window.goScene(5));
+    await page.evaluate(() => window.goScene && window.goScene(3));   // Coach hub
     await page.waitForFunction(() => {
       const co = document.getElementById('scene-coach'); if (!co) return false;
       const h = co.innerHTML;
@@ -365,7 +360,7 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
   });
 
   await check('Efficiency scene renders savings opportunities (or an honest empty state)', async () => {
-    await page.evaluate(() => window.goScene && window.goScene(6));
+    await page.evaluate(() => window.goScene && window.goScene(3));   // Coach hub (Savings tab content; innerHTML readable even when its panel is hidden)
     await page.waitForFunction(() => {
       const e = document.getElementById('scene-efficiency'); if (!e) return false;
       const h = e.innerHTML;

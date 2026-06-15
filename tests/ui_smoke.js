@@ -468,28 +468,38 @@ check('feature toggle: show-idle hides/shows idle sessions', () => {
   if (!document.getElementById('app').innerHTML.includes('data-sid="i"')) throw new Error('idle session should show with show-idle on');
 });
 
-// 9g) archive: hidden sessions are filtered out of Triage and listed in the Archive scene
-check('archive: hidden filtered from Triage, shown in Archive', () => {
+// 9g) archive: hidden sessions are filtered out of the active Triage list and shown under the 🗂️ Archived tab
+//     (Archive is no longer a separate scene — it's a filter on Triage; see render()/triageTabs()/setTriageView())
+check('archive: hidden filtered from active Triage, shown under the Archived tab', () => {
   ctx.setFeat('showIdle', true);
+  ctx.setTriageView('active');
   const list = [{ ...STATE[1], session_id: 'vis', needs_me: false, hidden: false },
                 { ...STATE[1], session_id: 'hid', needs_me: false, hidden: true }];
   ctx.render(list);
   const triage = document.getElementById('app').innerHTML;
-  if (!triage.includes('data-sid="vis"')) throw new Error('visible session missing from Triage');
-  if (triage.includes('data-sid="hid"')) throw new Error('hidden session must not appear in Triage');
-  const arch = document.getElementById('scene-archive').innerHTML;
-  if (!arch.includes('data-unhide="hid"')) throw new Error('hidden session missing from Archive scene');
-  if (arch.includes('data-unhide="vis"')) throw new Error('visible session must not appear in Archive');
+  if (!triage.includes('data-sid="vis"')) throw new Error('visible session missing from active Triage');
+  if (triage.includes('data-sid="hid"')) throw new Error('hidden session must not appear in active Triage');
+  if (!triage.includes('data-trview="archived"')) throw new Error('Archived tab should appear when something is hidden');
+  ctx.setTriageView('archived');
+  ctx.render(list);
+  const arch = document.getElementById('app').innerHTML;
+  if (!arch.includes('data-unhide="hid"')) throw new Error('hidden session missing from the Archived view');
+  if (arch.includes('data-sid="vis"')) throw new Error('visible session must not appear in the Archived view');
+  ctx.setTriageView('active');
 });
 
-// 9h) setHidden optimistically moves a session Triage → Archive without a server round-trip
-check('setHidden optimistically moves session Triage → Archive', () => {
+// 9h) setHidden optimistically moves a session out of the active list (and into the Archived view) without a round-trip
+check('setHidden optimistically moves session out of active Triage', () => {
   if (typeof ctx.setHidden !== 'function') throw new Error('setHidden() not defined');
+  ctx.setTriageView('active');
   const list = [{ ...STATE[1], session_id: 'x', needs_me: false, hidden: false }];
   ctx.render(list);
-  ctx.setHidden('x', true);
-  if (document.getElementById('app').innerHTML.includes('data-sid="x"')) throw new Error('session should leave Triage after setHidden(true)');
-  if (!document.getElementById('scene-archive').innerHTML.includes('data-unhide="x"')) throw new Error('session should appear in Archive after setHidden(true)');
+  ctx.setHidden('x', true);   // re-renders active view; x is now hidden
+  if (document.getElementById('app').innerHTML.includes('data-sid="x"')) throw new Error('session should leave active Triage after setHidden(true)');
+  ctx.setTriageView('archived');
+  ctx.render(list);
+  if (!document.getElementById('app').innerHTML.includes('data-unhide="x"')) throw new Error('session should appear under the Archived view after setHidden(true)');
+  ctx.setTriageView('active');
 });
 
 // 9i) dumb-zone v1: zone() maps ABSOLUTE context_tokens (+ a proximity-to-compact override) to zones
