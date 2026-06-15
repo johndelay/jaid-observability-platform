@@ -62,7 +62,12 @@ WEB_DIR          = os.environ.get("CC_WEB_DIR") or os.path.join(os.path.dirname(
 # unset = open (LAN trust). CC_INGEST_TOKEN gates /ingest from remote watchers (X-CC-Token header).
 ACCESS_PIN       = os.environ.get("CC_ACCESS_PIN", "")
 INGEST_TOKEN     = os.environ.get("CC_INGEST_TOKEN", "")
-AUTH_COOKIE      = hmac.new(ACCESS_PIN.encode(), b"cc-observability-v1", hashlib.sha256).hexdigest() if ACCESS_PIN else ""
+# CC_AUTH_SALT lets an operator INVALIDATE all existing login cookies without changing the PIN: the cookie is
+# HMAC(PIN, "cc-observability-v1|" + salt), so rotating the salt (any new value) logs every device out. Leave
+# it unset for the default; set/change it to revoke a leaked cookie. (Empty salt also changes the v1 cookie
+# once, on first deploy of this build — a harmless one-time re-login.)
+AUTH_SALT        = os.environ.get("CC_AUTH_SALT", "")
+AUTH_COOKIE      = hmac.new(ACCESS_PIN.encode(), b"cc-observability-v1|" + AUTH_SALT.encode(), hashlib.sha256).hexdigest() if ACCESS_PIN else ""
 # Answer-from-phone (E5). The reply travels: phone -> POST /reply (PIN-gated) -> _outbox queued under the
 # session's host -> the host's responder.py long-polls GET /outbox -> injects via tmux -> POST /outbox/result
 # -> unblocks /reply with the outcome. /reply REFUSES unless a PIN is set (injecting = RCE into the shell).
@@ -617,6 +622,13 @@ class Handler(BaseHTTPRequestHandler):
     def _ingest_authed(self):
         return (not INGEST_TOKEN) or (self.headers.get("X-CC-Token", "") == INGEST_TOKEN)
 
+    def _control_authed(self):
+        # Inject/coach control-plane (outbox + coach-worker handshake) moves reply TEXT and AI narratives —
+        # so, unlike Local-First metrics /ingest (open-by-default), it REQUIRES a configured token and refuses
+        # outright when CC_INGEST_TOKEN is unset (mirroring how /reply hard-refuses without a PIN). This closes
+        # the fail-open gap where a LAN host could drain/redirect queued replies or forge a coach narrative.
+        return bool(INGEST_TOKEN) and hmac.compare_digest(self.headers.get("X-CC-Token", ""), INGEST_TOKEN)
+
     def _read_json_body(self):
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -720,7 +732,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _outbox_poll(self):
         """Responder long-poll: hand the host's oldest queued reply to its responder (token-gated)."""
-        if not self._ingest_authed():
+        if not self._control_authed():
             self._send_text("unauthorized", 401)
             return
         qs = parse_qs(urlparse(self.path).query)
@@ -736,7 +748,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _outbox_result(self):
         """Responder reports an inject outcome -> unblock the waiting /reply (token-gated)."""
-        if not self._ingest_authed():
+        if not self._control_authed():
             self._send_text("unauthorized", 401)
             return
         body = self._read_json_body()
@@ -989,7 +1001,7 @@ class Handler(BaseHTTPRequestHandler):
     def _coach_job(self):
         """V8 Slice B: the host coach-worker claims the pending narrative job (token-gated) and gets the
         content-free bundle to feed its engine. {} when nothing is pending (or already claimed)."""
-        if not self._ingest_authed():
+        if not self._control_authed():
             self._send_text("unauthorized", 401)
             return
         claim = coach_claim()
@@ -1007,7 +1019,7 @@ class Handler(BaseHTTPRequestHandler):
     def _coach_result(self):
         """V8 Slice B: the worker submits the generated narrative (token-gated, re-validated). Cached in memory
         + persisted to store meta so the scene shows it immediately + survives a restart."""
-        if not self._ingest_authed():
+        if not self._control_authed():
             self._send_text("unauthorized", 401)
             return
         body = self._read_json_body()

@@ -1470,13 +1470,15 @@ class SecurityHardeningTests(unittest.TestCase):
         self.exportdir = os.path.join(self.dir, "exports"); os.makedirs(self.exportdir)
         self._store = store.Store(os.path.join(self.dir, "u.db"))
         self._orig = (server._store, server.ACCESS_PIN, server.AUTH_COOKIE, server.EXPORT_DIR,
-                      server.LOGIN_MAX_FAILS)
+                      server.LOGIN_MAX_FAILS, server.INGEST_TOKEN, server.OUTBOX_WAIT)
         server._store = self._store
         server.ACCESS_PIN = "supersecretpassphrase"
-        server.AUTH_COOKIE = _hmac.new(server.ACCESS_PIN.encode(), b"cc-observability-v1",
+        server.AUTH_COOKIE = _hmac.new(server.ACCESS_PIN.encode(), b"cc-observability-v1|",
                                        hashlib.sha256).hexdigest()
         server.EXPORT_DIR = self.exportdir
         server.LOGIN_MAX_FAILS = 3
+        server.INGEST_TOKEN = ""        # control-plane tests set this per-case
+        server.OUTBOX_WAIT = 0.2        # keep the /outbox long-poll from hanging the test
         with server._login_lock:
             server._login_fails.clear()
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -1487,7 +1489,7 @@ class SecurityHardeningTests(unittest.TestCase):
     def tearDown(self):
         self.httpd.shutdown(); self.httpd.server_close()
         (server._store, server.ACCESS_PIN, server.AUTH_COOKIE, server.EXPORT_DIR,
-         server.LOGIN_MAX_FAILS) = self._orig
+         server.LOGIN_MAX_FAILS, server.INGEST_TOKEN, server.OUTBOX_WAIT) = self._orig
         with server._login_lock:
             server._login_fails.clear()
         self._store.close(); shutil.rmtree(self.dir, ignore_errors=True)
@@ -1535,6 +1537,24 @@ class SecurityHardeningTests(unittest.TestCase):
         self.assertEqual(st, 400)
         self.assertEqual(resp["reason"], "load_failed")
         self.assertNotIn("detail", resp)                           # NO str(e) echo → no content/type oracle
+
+    def _get(self, path, token=None):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("GET", path, None, ({"X-CC-Token": token} if token is not None else {}))
+        r = c.getresponse(); data = r.read(); c.close()
+        return r.status, (json.loads(data) if data and r.getheader("Content-Type", "").startswith("application/json") else None)
+
+    def test_control_plane_fails_closed_when_token_unset(self):
+        server.INGEST_TOKEN = ""                                   # #4: control-plane must NOT fall open
+        st, _ = self._get("/outbox?host=h")
+        self.assertEqual(st, 401)                                  # refused (vs metrics /ingest which is open)
+
+    def test_control_plane_requires_matching_token(self):
+        server.INGEST_TOKEN = "tok-xyz"
+        self.assertEqual(self._get("/outbox?host=h")[0], 401)            # no token header
+        self.assertEqual(self._get("/outbox?host=h", token="wrong")[0], 401)
+        self.assertEqual(self._get("/outbox?host=h", token="tok-xyz")[0], 200)   # authed → empty queue
 
 
 class CraftScoreTests(unittest.TestCase):

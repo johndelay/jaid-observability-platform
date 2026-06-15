@@ -193,6 +193,12 @@ class ContentIndex:
             self._db.execute("PRAGMA busy_timeout=5000")
             self._db.executescript(_SCHEMA)
             self._run_migrations()
+        # This DB holds RAW transcript text — keep it owner-only (sqlite/WAL otherwise create 0644).
+        for ext in ("", "-wal", "-shm"):
+            try:
+                os.chmod(path + ext, 0o600)
+            except OSError:
+                pass
             self._db.commit()
 
     def _schema_version(self):
