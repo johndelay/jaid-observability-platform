@@ -13,6 +13,7 @@ import os
 import time
 
 import crypto
+import fsperms
 
 FORMAT = "cc-observability/portable"
 VERSION = 1
@@ -54,7 +55,7 @@ def _stamp(ts=None):
 def write_export(store, export_dir, passphrase=None, encrypt=True, ts=None, prefix="cc-obs-export"):
     """Write a bundle to export_dir. Encrypted by default — only ciphertext touches disk (we gzip+encrypt the
     bytes in memory, then write). Returns {path, bytes, encrypted}."""
-    os.makedirs(export_dir, exist_ok=True)
+    fsperms.secure_dir(export_dir)       # owner-only export dir (0700 POSIX)
     raw = json.dumps(export_bundle(store), separators=(",", ":")).encode("utf-8")
     gz = gzip.compress(raw)
     if encrypt:
@@ -67,6 +68,7 @@ def write_export(store, export_dir, passphrase=None, encrypt=True, ts=None, pref
     path = os.path.join(export_dir, name)
     with open(path, "wb") as f:
         f.write(blob)
+    fsperms.secure_file(path)            # owner-only (matters most for an unencrypted/plaintext bundle)
     return {"path": path, "bytes": len(blob), "encrypted": bool(encrypt)}
 
 
