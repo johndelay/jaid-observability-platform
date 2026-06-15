@@ -1102,6 +1102,19 @@ check('coachModalBody: names JAID Coach (not "Claude Coach"), shows /jaid-coach 
   ctx.openCoachModal(); ctx.closeCoachModal();   // must not throw in the stubbed DOM
 });
 
+// 🔒 Privacy modal (hamburger menu) — no-egress posture + plaintext-transcripts warning + Export guidance
+check('privacyModalBody: no-egress + plaintext-log warning + export/backup guidance; open/close safe', () => {
+  if (typeof ctx.privacyModalBody !== 'function') throw new Error('privacyModalBody() not defined');
+  const body = ctx.privacyModalBody();
+  if (!/no connection to any third-party|never uploads|content-free/i.test(body)) throw new Error('privacy: no-egress / no-export framing missing');
+  if (!/plain.?text/i.test(body)) throw new Error('privacy: plaintext-transcripts warning missing');
+  if (!/back (it|them) up|back up/i.test(body)) throw new Error('privacy: "you must back them up" guidance missing');
+  if (!/passphrase/i.test(body) || !/Export/.test(body)) throw new Error('privacy: Export + passphrase-protection guidance missing');
+  if (/[`]/.test(body.replace(/<[^>]*>/g, ''))) throw new Error('privacy: backtick in body would break the template literal');
+  if (typeof ctx.openPrivacyModal !== 'function' || typeof ctx.closePrivacyModal !== 'function') throw new Error('open/closePrivacyModal not defined');
+  ctx.openPrivacyModal(); ctx.closePrivacyModal();   // must not throw in the stubbed DOM
+});
+
 // 9m) 🧠 Coach scene (V8 Slice A): Claude Code handoff + content-free bundle + honesty framing + empty/null
 check('renderCoach: Claude Code handoff + bundle + honesty banner + empty/null states', () => {
   if (typeof ctx.renderCoach !== 'function') throw new Error('renderCoach() not defined');

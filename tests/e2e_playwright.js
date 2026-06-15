@@ -447,6 +447,23 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     await page.waitForFunction(() => { const c = document.getElementById('coachmodal'); return c && c.hidden; }, undefined, { timeout: 3000 });
   });
 
+  await check('menu → Privacy opens the privacy modal (no-egress + plaintext warning + export); Esc closes it', async () => {
+    await page.click('#menubtn');
+    await page.waitForFunction(() => { const m = document.getElementById('menu'); return m && m.hidden === false; }, undefined, { timeout: 3000 });
+    await page.$eval('[data-privacy-open]', el => el.click());
+    await page.waitForFunction(() => {
+      const p = document.getElementById('privacymodal'), m = document.getElementById('menu');
+      return p && !p.hidden && m && m.hidden;
+    }, undefined, { timeout: 3000 });
+    const ok = await page.evaluate(() => {
+      const b = document.getElementById('privacymodalbody').innerHTML;
+      return /plain.?text/i.test(b) && /passphrase/i.test(b) && /third-party|never uploads/i.test(b);
+    });
+    if (!ok) throw new Error('privacy modal must cover plaintext logs + export passphrase + no-egress posture');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => { const p = document.getElementById('privacymodal'); return p && p.hidden; }, undefined, { timeout: 3000 });
+  });
+
   // Screenshot artifact (gitignored) — eyes-on confirmation of real layout/CSS, fixed name so it overwrites.
   let shot = '';
   await check('saves a full-page screenshot artifact', async () => {

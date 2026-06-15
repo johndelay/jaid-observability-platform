@@ -656,6 +656,7 @@
     <div class="msect">Help &amp; support</div>
     <div class="mrow" data-help-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">❓ Help &amp; troubleshooting</span><span class="tag">open</span></div>
     <div class="mrow" data-coach-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">🧠 JAID Coach <span class="muted" style="font-weight:400">· coach me on my Claude Code usage</span></span><span class="tag">open</span></div>
+    <div class="mrow" data-privacy-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">🔒 Privacy &amp; your data <span class="muted" style="font-weight:400">· what stays on your machine</span></span><span class="tag">open</span></div>
   </div>
 </div>
 <div id="mcphelp" class="modal" hidden>
@@ -698,6 +699,12 @@
   <div class="modalpanel">
     <div class="modalhead"><h3>🧠 JAID Coach</h3><button id="coachmodalclose" class="modalclose">✕</button></div>
     <div id="coachmodalbody"></div>
+  </div>
+</div>
+<div id="privacymodal" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3>🔒 Privacy &amp; your data</h3><button id="privacymodalclose" class="modalclose">✕</button></div>
+    <div id="privacymodalbody"></div>
   </div>
 </div>
 <div id="detail" class="overlay" hidden>
@@ -1215,6 +1222,51 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 }
 function openTermsModal(){ const b=document.getElementById('termsbody'); if(b)b.innerHTML=_termsBody(); const m=document.getElementById('termsmodal'); if(m)m.hidden=false; }
 function closeTermsModal(){ const m=document.getElementById('termsmodal'); if(m)m.hidden=true; }
+
+// 🔒 Privacy & your data modal (hamburger menu) — plain-language summary of the no-egress posture, the
+// plaintext-transcripts warning, and what the Export function does. Static text; safe to screenshot.
+function privacyModalBody(){
+  return `
+  <p class="intro"><b>This app is self-hosted and content-free by design.</b> It runs entirely on your own
+    machine(s). By <b>default it makes no connection to any third-party server</b> and never uploads, sells,
+    or exports your data anywhere. The dashboard reads your Claude Code transcripts <b>read-only</b> and
+    computes counts and metrics (tokens, cost, timing) — it does not send your prompts, code, or conversations
+    off your machine.</p>
+  <p class="intro">The only outbound calls are <b>two opt-in features, both off by default</b>, and both are a
+    one-way fetch of a <b>public</b> file that sends nothing about you: the "latest suggestions" reading list
+    and the self-update version check. (Optional semantic search uses your <b>own local</b> Ollama — still
+    nothing leaves your machine.) Answer-from-phone stays on your LAN / Tailscale.</p>
+
+  <h4 style="margin:14px 0 4px">⚠️ Your chat logs are stored in plain text on this computer</h4>
+  <p class="intro">Claude Code itself writes your full conversations as <b>plain-text files</b> under
+    <code>~/.claude/projects/</code> — that's how Claude Code works (the same as your local Claude history).
+    This app <b>reads</b> them but <b>never exports or transmits</b> them. Two things follow:</p>
+  <ul class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li>They are <b>not backed up by this app.</b> If you want to keep them, <b>you</b> must back them up — and
+      because they're plain text, store those backups somewhere safe.</li>
+    <li>If you turn on the 🔍 Search scene, conversation text is also indexed into a <b>separate local
+      database</b> on this machine (opt-in, wipeable in 🧹 Maintenance, and likewise never leaves your computer).</li>
+  </ul>
+
+  <h4 style="margin:14px 0 4px">📦 The Export function (🧹 Maintenance)</h4>
+  <p class="intro"><b>Export</b> writes a single <b>encrypted</b> file (AES-256-GCM, from a passphrase you
+    choose) containing the app's <b>metrics/history</b> — so you can back it up or move it to another machine
+    and <b>Import</b> it there. It's encrypted <i>before</i> it touches disk.</p>
+  <ul class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li><b>Protect the file and its passphrase.</b> Keep the passphrase in a password manager (e.g. 1Password),
+      and don't store it next to the export file.</li>
+    <li><b>Don't lose the passphrase</b> — it's never saved anywhere, so without it the export <b>cannot</b> be
+      recovered.</li>
+    <li>The export is the app's data (counts, cost, history). It does <b>not</b> contain your raw chat
+      transcripts — those are the plain-text files above, which you back up separately.</li>
+  </ul>
+
+  <p class="intro" style="margin-top:14px"><b>In short:</b> nothing leaves your machine unless you explicitly
+    opt in, and even then only a public file is fetched — never your data. Your conversation history lives in
+    plain text on your own disk; backing it up (and keeping any exports + passphrases safe) is up to you.</p>
+  <p class="foot" style="margin-top:8px">Full posture: <code>COMPLIANCE.md</code> · data export details:
+    <code>docs/DATA_EXPORT.md</code> · content/search privacy: <code>docs/CONTENT_PRIVACY.md</code>.</p>`;
+}
 
 function render(list){
   window._cards={}; window._list=list; list.forEach(s=>window._cards[s.session_id]=s);
@@ -2803,6 +2855,7 @@ const carousel=document.getElementById('carousel'), track=document.getElementByI
       mcphelp=document.getElementById('mcphelp'),
       helpmodal=document.getElementById('helpmodal'),
       coachmodal=document.getElementById('coachmodal'),
+      privacymodal=document.getElementById('privacymodal'),
       ctxhelp=document.getElementById('ctxhelp'),
       daypop=document.getElementById('daypop'),
       convo=document.getElementById('convo'),
@@ -2924,6 +2977,11 @@ if(coachmodal)coachmodal.addEventListener('click',e=>{
   copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
     if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
 });
+// 🔒 Privacy modal — static body; no copy buttons, just backdrop/✕/Esc to close
+function openPrivacyModal(){ const b=document.getElementById('privacymodalbody'); if(b)b.innerHTML=privacyModalBody(); if(privacymodal)privacymodal.hidden=false; }
+function closePrivacyModal(){ if(privacymodal)privacymodal.hidden=true; }
+elClick('privacymodalclose',closePrivacyModal);
+if(privacymodal)privacymodal.addEventListener('click',e=>{ if(e.target===privacymodal)closePrivacyModal(); });
 function openCtxHelp(){ const b=document.getElementById('ctxhelpbody'); if(b)b.innerHTML=ctxHelpBody(); if(ctxhelp)ctxhelp.hidden=false; }
 function closeCtxHelp(){ if(ctxhelp)ctxhelp.hidden=true; }
 elClick('ctxhelpclose',closeCtxHelp);
@@ -2945,6 +3003,7 @@ elClick('menuclose',closeMenu);
 if(menu)menu.addEventListener('click',e=>{
   if(e.target.closest&&e.target.closest('[data-help-open]')){ closeMenu(); openHelpModal(); return; }
   if(e.target.closest&&e.target.closest('[data-coach-open]')){ closeMenu(); openCoachModal(); return; }
+  if(e.target.closest&&e.target.closest('[data-privacy-open]')){ closeMenu(); openPrivacyModal(); return; }
   if(e.target===menu)closeMenu();
 });
 if(menuscenes)menuscenes.addEventListener('click',e=>{
@@ -2971,8 +3030,8 @@ if(carousel){
 // --- keyboard (← → between scenes; ESC closes menu/detail) — window events guarded for the smoke sandbox ---
 if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){ if(coachmodal&&!coachmodal.hidden){closeCoachModal();return;} if(helpmodal&&!helpmodal.hidden){closeHelpModal();return;} if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
-    if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(helpmodal&&!helpmodal.hidden)||(coachmodal&&!coachmodal.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
+    if(e.key==='Escape'){ if(privacymodal&&!privacymodal.hidden){closePrivacyModal();return;} if(coachmodal&&!coachmodal.hidden){closeCoachModal();return;} if(helpmodal&&!helpmodal.hidden){closeHelpModal();return;} if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
+    if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(helpmodal&&!helpmodal.hidden)||(coachmodal&&!coachmodal.hidden)||(privacymodal&&!privacymodal.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
     if(e.key==='ArrowRight')goScene(sceneIdx+1);
     else if(e.key==='ArrowLeft')goScene(sceneIdx-1);
   });
