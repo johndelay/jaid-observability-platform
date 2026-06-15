@@ -1038,7 +1038,7 @@ function coachModalBody(){
 
 // ---- Suggestions / Reading card ----
 // public gist URL for the hosted article list (opt-in fetch only — ZERO egress when checkbox is off)
-const SUGGEST_URL='https://gist.githubusercontent.com/johndelay/5127ce55fd95f44e91327fe2edb58f00/raw/';
+const SUGGEST_URL='https://raw.githubusercontent.com/johndelay/jaid-observability-platform/main/suggestions.json';
 // bundled starter list (shown by default; replaced by fetched items when opted-in)
 const SUGGESTIONS=[
   {kind:'article', title:'Surviving Compaction', blurb:'How context compaction silently erases constraints — and how to catch it.', url:'https://thedelay.com/surviving-compaction/', tags:['context-rot','dumb-zone','claude-code']},
@@ -1309,15 +1309,23 @@ function render(list){
 
 // Paint the Suggestions card into the floating bottom dock, wire its nav/checkbox, then measure its
 // height into --dockh so #app reserves matching bottom padding (last rows clear the overlay).
+let _sgDockHtml=null;
 function paintSuggestDock(){
   if(!suggestDock){ _wireSuggest(); return; }
-  suggestDock.innerHTML=renderSuggestCard();
-  _wireSuggest();
-  try{
-    const card=suggestDock.querySelector('.suggest'), root=document.documentElement;
-    if(root&&root.style&&root.style.setProperty)
-      root.style.setProperty('--dockh',((card&&card.offsetHeight)||0)+'px');
-  }catch(_){}
+  const html=renderSuggestCard();
+  // Only rebuild when the card content actually changed. render() fires every ~5s on SSE; re-setting
+  // innerHTML each tick destroyed the live <input> mid-click, so checking the opt-in box was a coin-flip
+  // ("can't tick the box"). When nothing changed we leave the existing node alone so clicks always land.
+  if(html!==_sgDockHtml){
+    _sgDockHtml=html;
+    suggestDock.innerHTML=html;
+    try{
+      const card=suggestDock.querySelector('.suggest'), root=document.documentElement;
+      if(root&&root.style&&root.style.setProperty)
+        root.style.setProperty('--dockh',((card&&card.offsetHeight)||0)+'px');
+    }catch(_){}
+  }
+  _wireSuggest();   // (re)bind handlers — idempotent (.onX= on the same live nodes); cheap to call each tick
 }
 
 // ---- Cost & Accounts scene: per-account spend + plan rate-limits + Extra-Usage, with a fleet rollup ----

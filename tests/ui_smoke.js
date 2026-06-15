@@ -1340,11 +1340,11 @@ check('suggest: default state has suggest.fetch unchecked (no network call by de
 // ---- suggest: opt-in fetch tests ----
 
 check('suggest: zero-egress invariant — fetch NOT called when suggest.fetch is off (default)', () => {
-  // Record whether the gist URL was fetched while suggest.fetch=false (the default)
+  // Record whether the suggestions URL was fetched while suggest.fetch=false (the default)
   let fetchCalled = false;
   const origFetch = sandbox.fetch;
   sandbox.fetch = async (url) => {
-    if (String(url).includes('gist.githubusercontent.com')) fetchCalled = true;
+    if (String(url).includes('jaid-observability-platform')) fetchCalled = true;
     return origFetch(url);
   };
   try {
@@ -1352,7 +1352,7 @@ check('suggest: zero-egress invariant — fetch NOT called when suggest.fetch is
   } finally {
     sandbox.fetch = origFetch;
   }
-  if (fetchCalled) throw new Error('fetch was called to the gist URL when suggest.fetch is off — zero-egress invariant violated');
+  if (fetchCalled) throw new Error('fetch was called to the suggestions URL when suggest.fetch is off — zero-egress invariant violated');
 });
 
 check('suggest: opted-in → _sgFetch() calls fetch with SUGGEST_URL', () => {
@@ -1369,8 +1369,9 @@ check('suggest: opted-in → _sgFetch() calls fetch with SUGGEST_URL', () => {
     sandbox.fetch = origFetch;
   }
   if (!fetchedUrl) throw new Error('fetch was never called after _sgFetch()');
-  if (!String(fetchedUrl).includes('gist.githubusercontent.com')) {
-    throw new Error('fetch was called but not with the gist URL: ' + fetchedUrl);
+  // the suggestions list is hosted in the JAID repo (raw.githubusercontent.com/.../jaid-observability-platform/...)
+  if (!String(fetchedUrl).includes('jaid-observability-platform')) {
+    throw new Error('fetch was called but not at the JAID-repo suggestions URL: ' + fetchedUrl);
   }
 });
 
@@ -1418,7 +1419,7 @@ check('suggest: item with javascript: url is dropped by _sgSanitizeItem (not ren
 check('suggest: malformed/failed fetch → card still renders bundled list, no throw', () => {
   const origFetch = sandbox.fetch;
   sandbox.fetch = async (url) => {
-    if (String(url).includes('gist.githubusercontent.com')) throw new Error('network error');
+    if (String(url).includes('jaid-observability-platform')) throw new Error('network error');
     return origFetch(url);
   };
   ctx._sgSetFetched(null);  // ensure no cached items from earlier tests
