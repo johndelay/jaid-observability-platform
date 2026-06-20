@@ -354,6 +354,7 @@ def compute(snap, now):
         # fall back to our computed pct_to_compact on watcher-only hosts that have no statusline.
         "pct_compact": (snap.get("auth_used_pct") if snap.get("auth_used_pct") is not None
                         else round(pct_to_compact * 100, 1)),
+        "auth_used_pct": snap.get("auth_used_pct"),   # Claude Code's own used_percentage (None = no statusline feed)
         "cost_usd": snap.get("cost_usd"),
         "rate_limits": snap.get("rate_limits"),
         "state": state,
