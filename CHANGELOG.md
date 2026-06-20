@@ -9,6 +9,15 @@ This is a curated, user-facing log — for the full commit history see the Git l
 ## [Unreleased]
 
 ### Changed
+- **The session % gauge now shows distance-to-auto-compaction, not raw context-window fill.** It used to
+  read `tokens / full window` (e.g. 93%), which trailed Claude Code's own "100% context used" indicator —
+  because Claude Code compacts at the window *minus* a reserved output/compaction buffer, not at the hard
+  ceiling. The number, bar, color, sort, "fullest"→"to compact" summary chip, and drill-in now report
+  `pct_compact`: Claude Code's authoritative `used_percentage` when the statusline feed supplies it (so the
+  dashboard hits 100% exactly when Claude Code compacts), falling back to a computed `pct_to_compact` on
+  watcher-only hosts. Raw window fill is retained on the % tooltip and in the drill-in. The absolute-token
+  "dumb zone" bands are unchanged; their on-bar threshold needles were rescaled to the new denominator so
+  they stay aligned.
 - **Suggestions & Reading card** now auto-advances to the next article every 20 seconds (pauses while you
   hover or focus it; the ‹ › arrows still work and reset the timer).
 - The article **title in the Suggestions card is now clickable** — it opens the article in a new tab, the
