@@ -231,7 +231,10 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     await page.evaluate(() => window.goScene && window.goScene(6));
     await page.waitForFunction(() => {
       const help = document.getElementById('scene-help'), ab = document.getElementById('scene-about');
-      return help && help.textContent.includes('context window') && ab && /About/.test(ab.innerHTML) && !/Loading/.test(ab.innerHTML);
+      // Assert STRUCTURE (the legend's definition-list rendered with its terms), not a copy substring —
+      // a wording edit to any <dd> must not break "did the Help scene populate?". (Burned once: dropping
+      // the phrase "context window" from a <dd> failed this check though the scene rendered fine.)
+      return help && help.querySelectorAll('dl.lterm dt').length >= 3 && ab && /About/.test(ab.innerHTML) && !/Loading/.test(ab.innerHTML);
     }, undefined, { timeout: 4000, polling: 100 });
     await page.evaluate(() => window.goScene && window.goScene(7));   // Fleet is now the very last scene
     await page.waitForFunction(() => {
