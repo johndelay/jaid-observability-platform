@@ -285,6 +285,20 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(out["window"], 1_000_000)
         self.assertEqual(out["pct"], 10.0)
 
+    def test_pct_compact_prefers_authoritative(self):
+        # The gauge shows distance-to-auto-compact. When Claude Code's statusline supplies its own
+        # used_percentage, pct_compact must equal it exactly (so the dashboard hits 100% when Claude
+        # Code compacts) — NOT the raw fill, NOT our computed approximation.
+        now = time.time()
+        auth = server.compute({"context_tokens": 180000, "auth_window": 200000,
+                               "auth_used_pct": 100.0, "reported_at": now}, now)
+        self.assertEqual(auth["pct_compact"], 100.0)
+        self.assertEqual(auth["pct"], 90.0)           # raw fill retained, distinct from the gauge value
+        # Watcher-only host (no statusline feed) → fall back to the computed pct_to_compact.
+        comp = server.compute({"context_tokens": 100000, "auth_window": 200000, "reported_at": now}, now)
+        self.assertIsNone(comp.get("auth_used_pct"))
+        self.assertEqual(comp["pct_compact"], comp["pct_to_compact"])
+
     def test_compute_passes_account_through(self):
         now = time.time()
         out = server.compute({"account": "me@example.com", "reported_at": now}, now)

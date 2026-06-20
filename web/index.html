@@ -593,7 +593,7 @@
       <div class="lcard"><h3>The Triage board</h3><dl class="lterm">
         <dt>Needs you</dt><dd>Sessions <b>waiting on your input</b> (a question, a permission, a choice). These float to the top so nothing stalls unseen.</dd>
         <dt>working / waiting / idle</dt><dd><b>working</b> = Claude is actively going. <b>waiting</b> = it asked you something. <b>idle</b> = quiet, nothing pending.</dd>
-        <dt>The % and bar</dt><dd>How full that session's <b>context window</b> is. Higher = closer to an auto-compaction (where older context gets summarized away).</dd>
+        <dt>The % and bar</dt><dd>How close that session is to an <b>auto-compaction</b> (where older context gets summarized away). 100% = Claude Code compacts — this matches Claude Code's own indicator. Hover the % to also see how full the raw <b>context window</b> is.</dd>
         <dt>⏱ ETA</dt><dd>Estimated time until this session hits compaction at its current growth rate — your runway before context gets squeezed.</dd>
         <dt>~N left</dt><dd>Approx <b>tokens</b> remaining before compaction.</dd>
         <dt>▸N</dt><dd>Number of <b>subagents</b> this session is currently running.</dd>
@@ -781,6 +781,10 @@ const fmt=n=>n==null?'—':(n>=1000?(n/1000).toFixed(n>=100000?0:1)+'k':String(n
 const usd=n=>n==null?'':'$'+(n<1?n.toFixed(3):n.toFixed(2));
 const fmtTok=n=>{n=n||0;return n>=1e9?(n/1e9).toFixed(1)+'B':n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':String(n);};
 const color=p=>p>=85?'var(--red)':p>=60?'var(--amber)':'var(--green)';
+// The gauge reads distance-to-auto-compact (server's pct_compact: Claude Code's authoritative used_percentage
+// when present, else our computed pct_to_compact), NOT raw window fill — that's the number Claude Code itself
+// shows hitting 100% at compaction. Fall back to raw pct only for legacy/test records lacking the field.
+const pctc=s=>(s&&s.pct_compact!=null)?s.pct_compact:(s&&s.pct!=null?s.pct:0);
 // ---- context-health "dumb zone" (v1, static) ----
 // Degradation (Context Rot, Chroma 2025; Lost-in-the-Middle, Liu 2023) tracks ABSOLUTE accumulated context,
 // not % of window — so zones key off context_tokens, with a proximity-to-auto-compact override so a small
@@ -825,8 +829,11 @@ function dzBand(ctx){
 // when its boundary is at/past the bar's end (≥100%). Shared by the hero (witem) and the row cards.
 function dzTicks(s){
   if(!feat.dumbzone || !s.window) return '';
+  // Position needles on the SAME scale as the fill bar — which now reads distance-to-auto-compact, so
+  // tokens are placed relative to the compaction point (compact_at), not the full window.
+  const denom=s.compact_at||(s.window*0.95);
   const t=(tok,col,emoji,label,tip)=>{
-    const p=(tok/s.window)*100;
+    const p=(tok/denom)*100;
     return p<100 ? `<span class="dz-tick" style="left:${p.toFixed(1)}%;background:${col}" data-tip="${emoji} ${label} – Dumb Zone\n${fmtTok(tok)} accumulated context tokens. ${tip}"></span>` : '';
   };
   return t(ZONE_TOK.good,  'var(--yellow)','🟡','Warming', 'Entering the dumb-zone range — context is getting long. Still fine; just be aware.')
@@ -943,7 +950,7 @@ if(accountsEl)accountsEl.addEventListener('click',e=>{
 // ---------- session sort (registry; user-chosen in the menu) ----------
 // Applies to the "Sessions" list. The Needs-You hero is ALWAYS on top (the safety headline) regardless.
 const SORTS=[
-  {id:'ctx',   label:'Context % (fullest first)', cmp:(a,b)=>(b.pct||0)-(a.pct||0)},
+  {id:'ctx',   label:'Context % (closest to compact first)', cmp:(a,b)=>pctc(b)-pctc(a)},
   {id:'cost',  label:'Cost (highest first)',      cmp:(a,b)=>(b.cost_usd||0)-(a.cost_usd||0)},
   {id:'recent',label:'Recent activity first',     cmp:(a,b)=>(a.age_secs||0)-(b.age_secs||0)},
   {id:'acct',  label:'Account, then name',        cmp:(a,b)=>String(acctDisplay(a.account)).localeCompare(String(acctDisplay(b.account)))},
@@ -1416,7 +1423,7 @@ function render(list){
       ah+=`<div class="row" data-unhide="${s.session_id}">
         <div class="who">${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span></div>
         <div class="pct"><button class="ubtn">♻ un-hide</button></div>
-        <div class="sub"><span>${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}</span><span>${Math.round(s.pct)}% · ${rel(s.age_secs)}</span></div>
+        <div class="sub"><span>${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}</span><span>${Math.round(pctc(s))}% · ${rel(s.age_secs)}</span></div>
       </div>`;
     }
     app.innerHTML=ah; paintSuggestDock(); return;
@@ -1437,7 +1444,7 @@ function render(list){
 
   const working=others.filter(s=>s.eff_state==='working').length;
   const idle=others.filter(s=>s.eff_state!=='working').length;
-  const fullest=list.reduce((a,s)=>Math.max(a,s.pct),0);
+  const fullest=list.reduce((a,s)=>Math.max(a,pctc(s)),0);
   const multiAcct=new Set(list.map(s=>s.account).filter(Boolean)).size>1;  // tag cards only when fleet spans >1 account
 
   // NEEDS YOU hero
@@ -1451,9 +1458,9 @@ function render(list){
       html+=`<div class="witem" data-sid="${s.session_id}">
         <div class="who">${badge(s)}</div>
         <div class="wait">${waited(s)}<small>waiting</small></div>
-        <div class="sub">${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}${multiAcct&&s.account?' · '+apx(s.account_approx)+esc(acctDisplay(s.account)):''} · ${Math.round(s.pct)}%${s.eta_secs?' · ⏱'+dur(s.eta_secs):''}${s.subagent_running>0?' · ▸'+s.subagent_running:''}</div>
+        <div class="sub">${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}${multiAcct&&s.account?' · '+apx(s.account_approx)+esc(acctDisplay(s.account)):''} · ${Math.round(pctc(s))}%${s.eta_secs?' · ⏱'+dur(s.eta_secs):''}${s.subagent_running>0?' · ▸'+s.subagent_running:''}</div>
         ${ask}
-        <div class="mini-wrap"><div class="mini"><i style="width:${Math.min(100,s.pct)}%;background:${color(s.pct)}"></i></div>${wdzTick}</div>
+        <div class="mini-wrap"><div class="mini"><i style="width:${Math.min(100,pctc(s))}%;background:${color(pctc(s))}"></i></div>${wdzTick}</div>
       </div>`;
     }
     html+='</section>';
@@ -1470,7 +1477,7 @@ function render(list){
   html+=`<div class="summary">
     <div class="chip" title="Sessions Claude is actively running right now"><b>${working}</b><span>working</span></div>
     <div class="chip" title="Sessions that are quiet — nothing pending"><b>${idle}</b><span>idle</span></div>
-    <div class="chip ${fc}" title="Highest context-window fill across sessions — higher means closer to auto-compaction"><b>${Math.round(fullest)}%</b><span>fullest ctx</span></div>
+    <div class="chip ${fc}" title="Closest any session is to auto-compaction (100% = Claude Code compacts)"><b>${Math.round(fullest)}%</b><span>to compact</span></div>
     ${dzCount>0?`<div class="chip warn" title="Sessions drifting into the &quot;dumb zone&quot; — context big enough that quality may degrade; consider /compact"><b>${dzCount}</b><span>🧠 dumb zone</span></div>`:''}
     ${burn?`<div class="chip" title="Recent spend rate across active sessions, dollars per hour"><b>${usd(burn.cost_per_hour)}/h</b><span>burn</span></div>`:''}
     ${today?(()=>{const pr=(cd&&cd.daily||[]).slice(1,8).map(d=>d.cost_usd||0);const av=pr.length?pr.reduce((a,b)=>a+b,0)/pr.length:0;
@@ -1484,8 +1491,8 @@ function render(list){
     const hidden=others.length-shown.length;
     html+='<div class="sect">Sessions'+(hidden>0?` <span class="muted" style="font-weight:400">· ${hidden} idle hidden</span>`:'')+'</div>';
     for(const s of sortSessions(shown)){
-      const dz=feat.dumbzone, c=color(s.pct), cl=clarity(s);
-      // compaction (% of window) owns the number+bar + the alarm red; the dumb zone gets its own SOFT
+      const dz=feat.dumbzone, c=color(pctc(s)), cl=clarity(s);
+      // compaction (% to auto-compact) owns the number+bar + the alarm red; the dumb zone gets its own SOFT
       // inline 🧠 pip (fill+hue grow with absolute context) so the two can't be confused.
       const pip = dz && s.context_tokens!=null
         ? (()=>{ const b=dzBand(cl.ctx); return `<span class="dz-pip" title="🧠 Dumb zone: ${b.emoji} ${b.label} · ~${fmtTok(cl.ctx)} carried — ${b.tip} A gradual range (🟡 warming → 🟠 drifting → 🔴 deep), NOT a wall: this tracks Context Rot (what you're carrying), not window fill. A soft heuristic — not an Anthropic-defined threshold, and your own data shows no hard knee.">🧠<i class="dot" style="--f:${cl.fill.toFixed(3)};--c:${cl.col}"></i></span>`; })()
@@ -1494,8 +1501,8 @@ function render(list){
       const dzTick = dzTicks(s);
       html+=`<div class="row ${s.stale?'stale':''}" data-sid="${s.session_id}">
         <div class="who">${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span>${pip}</div>
-        <div class="pct" style="color:${c}" title="Context window ${Math.round(s.pct)}% full — higher means closer to auto-compaction">${Math.round(s.pct)}%</div>
-        <div class="mini-wrap"><div class="mini"><i style="width:${Math.min(100,s.pct)}%;background:${c}"></i></div>${dzTick}</div>
+        <div class="pct" style="color:${c}" title="${Math.round(pctc(s))}% of the way to auto-compaction (100% = Claude Code compacts). ${Math.round(s.pct)}% of the raw ${s.window>=1000000?'1M':'200k'} window.">${Math.round(pctc(s))}%</div>
+        <div class="mini-wrap"><div class="mini"><i style="width:${Math.min(100,pctc(s))}%;background:${c}"></i></div>${dzTick}</div>
         <div class="sub">
           <span>${esc(projDisplay(s.project))} · ${esc(hostDisplay(s.host))}${multiAcct&&s.account?' · '+apx(s.account_approx)+esc(acctDisplay(s.account)):''}${s.authoritative?'<span class="tag">'+(s.window>=1000000?'1M':'200k')+'</span>':''}${s.subagent_running>0?' <span class="run">▸'+s.subagent_running+'</span>':''}</span>
           <span>${s.cost_usd!=null?(s.cost_est?'~':'')+usd(s.cost_usd)+' · ':''}${s.eta_secs?'⏱'+dur(s.eta_secs)+' · ':''}~${fmt(s.tokens_until_compact)} left · ${rel(s.age_secs)}</span>
@@ -2710,10 +2717,10 @@ function mcpChips(mcp){
 }
 function renderDetailStats(){
   const s=(window._cards||{})[openSid]; if(!s)return;
-  const z=zone(s), c=color(s.pct);   // % always = compaction color; the banner below carries the dumb-zone color
+  const z=zone(s), c=color(pctc(s));   // % always = compaction color; the banner below carries the dumb-zone color
   dtitle.innerHTML=`${badge(s)} <span class="pill ${s.eff_state}">${s.eff_state}</span>`;
   dstats.innerHTML=`${feat.dumbzone?`<div class="zone z-${z.key}"><span class="zl">${z.emoji} ${z.label}</span><span class="za">${esc(z.advice)}</span></div>`:''}
-    <div class="drow"><b style="color:${c}">${Math.round(s.pct)}%</b> of ${fmt(s.window)} · ~${fmt(s.tokens_until_compact)} to compact</div>
+    <div class="drow"><b style="color:${c}">${Math.round(pctc(s))}%</b> to auto-compact · ~${fmt(s.tokens_until_compact)} left · ${Math.round(s.pct)}% of ${fmt(s.window)}</div>
     ${s.eta_secs?`<div class="drow">⏱ <b>${dur(s.eta_secs)}</b> to compact · +${s.growth_tpm||0} tok/min</div>`:''}
     ${feat.dumbzone&&histPts.length>1?`<div class="spark"><span class="sl">📈 context trajectory · ${histPts.length} pts</span>${svgSpark(histPts)}</div>`:''}
     ${evData&&evData.counts&&Object.keys(evData.counts).length?`<div class="evrow">${evChips(evData.counts)}</div>`:''}
