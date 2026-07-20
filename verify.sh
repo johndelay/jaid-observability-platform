@@ -38,6 +38,11 @@ fi
 sec "Syntax"
 python3 -m py_compile server.py watcher.py coach.py coach_worker.py content_index.py store.py version.py maintenance.py redact.py portable.py crypto.py && echo "  PASS py_compile" || FAIL=$((FAIL+1))
 bash -n hooks/cc-statusline.sh && echo "  PASS statusline syntax" || FAIL=$((FAIL+1))
+bash -n scripts/check-release-ready.sh && bash -n scripts/rebuild.sh && echo "  PASS release-script syntax" || FAIL=$((FAIL+1))
+# Runs the release gate's own regression suite, NOT the live gate. The live gate is a release-time step
+# (docs/RELEASING.md step 1) and would fail routine work — mid-cycle you commit code, then write the
+# changelog entry. What must never silently rot is the gate itself.
+scripts/check-release-ready.sh --self-test >/dev/null 2>&1 && echo "  PASS release-gate self-test" || { echo "  FAIL release-gate self-test"; FAIL=$((FAIL+1)); }
 # V13 Slice 7: native runtime binds the content port to loopback directly (no Docker dual-port).
 if CC_RUNTIME=native python3 -c "import server; assert server.RUNTIME=='native' and server.CONTENT_BIND=='127.0.0.1'" 2>/dev/null; then
   echo "  PASS native runtime binds content to 127.0.0.1"; else echo "  FAIL native runtime bind"; FAIL=$((FAIL+1)); fi

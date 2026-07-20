@@ -8,7 +8,15 @@ This is a curated, user-facing log — for the full commit history see the Git l
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **Pre-release gate** (`scripts/check-release-ready.sh`, step 0 of `docs/RELEASING.md`). Blocks a release
+  when `[Unreleased]` is empty while commits have landed since the last tag, when a security-relevant
+  commit has no `### Security` section to accompany it, or when `version.py`, `pyproject.toml` and
+  `manifest.json` disagree on the version. It prints the unrecorded commits, so writing the changelog
+  starts from a list rather than from memory. Two releases in a row shipped with an under-recorded
+  changelog — the second after the risk was written up in `RELEASING.md` — and a missing entry is
+  invisible by construction, so this is a check rather than another warning. `manifest.json` in
+  particular had no version guard at all despite being the file the update checker fetches.
 
 ## [0.15.0] — 2026-07-20
 
