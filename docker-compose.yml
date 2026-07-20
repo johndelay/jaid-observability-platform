@@ -14,7 +14,13 @@
 
 services:
   cc-observability:
-    build: .
+    build:
+      context: .
+      args:
+        # Baked into /health so the dashboard can tell a tagged release from post-tag code. Use
+        # scripts/rebuild.sh (it fills this in from git); a plain `docker compose build` leaves it
+        # empty, which reports "build unknown" rather than a false clean release.
+        CC_BUILD: ${CC_BUILD:-}
     image: cc-observability:latest
     container_name: cc-observability
     ports:

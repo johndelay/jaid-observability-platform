@@ -9,13 +9,19 @@ RUN apk add --no-cache tzdata
 # musllinux wheels → install in seconds on alpine, no compiler.
 RUN pip install --no-cache-dir numpy cryptography
 
+# Build stamp ("v<VERSION>" at the tag, else a short sha), passed in by scripts/rebuild.sh / docker-compose.
+# Empty is allowed and honest: /health then reports release:null ("unknown build") rather than claiming
+# the image is exactly the tagged release.
+ARG CC_BUILD=""
+
 WORKDIR /app
 COPY server.py watcher.py costing.py store.py craft.py medals.py coach.py content_index.py version.py maintenance.py redact.py portable.py crypto.py fsperms.py ./
 COPY web ./web
 
 # Single self-contained process: serve the dashboard AND scan local transcripts in-process.
 # Mount the host's transcripts read-only at /data/projects (see docker-compose.yml).
-ENV CC_PORT=8099 \
+ENV CC_BUILD=$CC_BUILD \
+    CC_PORT=8099 \
     CC_LOCAL_SCAN=1 \
     CC_PROJECTS_DIR=/data/projects \
     CC_STATE_DIR=/data/state \

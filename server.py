@@ -1343,7 +1343,11 @@ class Handler(BaseHTTPRequestHandler):
         """Liveness + version + runtime. Content-free and UNAUTHENTICATED (a probe endpoint). Drives the UI
         footer + Slice 6's update check (which picks the upgrade verb from the runtime)."""
         self._send_json({"ok": True, "version": version.VERSION, "runtime": RUNTIME,
-                         "content_port": CONTENT_PORT})
+                         "content_port": CONTENT_PORT,
+                         # build/release/version_display describe WHICH build of VERSION this is; `version`
+                         # stays the bare release number the update check compares against.
+                         "build": version.build(), "release": version.is_release(),
+                         "version_display": version.display()})
 
     def _authed(self):
         if not ACCESS_PIN:

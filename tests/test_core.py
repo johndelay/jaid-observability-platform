@@ -2504,6 +2504,10 @@ class HealthTests(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["version"], version.VERSION)
         self.assertIn(body["runtime"], ("docker", "native"))
+        # the build stamp travels alongside VERSION, never replacing it (the update check compares `version`)
+        for k in ("build", "release", "version_display"):
+            self.assertIn(k, body, f"/health must expose {k} so a dev build can't pass as the tagged release")
+        self.assertIn(body["release"], (True, False, None))
 
     def test_update_endpoint_defaults_to_no_update(self):
         import urllib.request
@@ -2512,6 +2516,48 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(body["current"], version.VERSION)
         self.assertFalse(body["update_available"])          # no manifest configured → never flags an update
         self.assertIn("verb", body)
+
+
+class VersionBuildStampTests(unittest.TestCase):
+    """The build stamp: VERSION says which RELEASE, CC_BUILD says which BUILD of it. Regression guard for a
+    container that reported a clean '0.14.0' for days while actually serving post-tag code."""
+
+    def setUp(self):
+        self._orig = version.BUILD
+
+    def tearDown(self):
+        version.BUILD = self._orig
+
+    def test_no_stamp_is_unknown_not_release(self):
+        """The important one. An unstamped build must report None, NOT True — reporting False would be an
+        equally wrong claim, and True is the original bug."""
+        version.BUILD = ""
+        self.assertIsNone(version.is_release())
+        self.assertIsNone(version.build())
+        self.assertEqual(version.display(), version.VERSION)
+
+    def test_tagged_build_is_a_release(self):
+        version.BUILD = "v" + version.VERSION
+        self.assertTrue(version.is_release())
+        self.assertEqual(version.display(), version.VERSION)     # no noise on a real release
+
+    def test_post_tag_build_is_flagged_and_shown(self):
+        version.BUILD = "02fab5f"
+        self.assertFalse(version.is_release())
+        self.assertEqual(version.display(), version.VERSION + "+02fab5f")
+
+    def test_dirty_tree_is_never_a_release(self):
+        """A hand-edited checkout at the tag must not masquerade as the shipped release."""
+        version.BUILD = "02fab5f-dirty"
+        self.assertFalse(version.is_release())
+        self.assertIn("dirty", version.display())
+
+    def test_stamp_never_leaks_into_the_update_comparison(self):
+        """VERSION stays bare semver: a dev build must not read as 'newer' than the published release and
+        suppress its own update banner."""
+        version.BUILD = "02fab5f"
+        self.assertFalse(version.is_newer(version.VERSION, version.VERSION))
+        self.assertTrue(version.is_newer("99.0.0", version.VERSION))
 
 
 class VersionTests(unittest.TestCase):

@@ -9,6 +9,37 @@ import os
 
 VERSION = "0.14.0"
 
+# Build stamp: "v<VERSION>" when the image was built from exactly the tagged release on a clean tree, else a
+# short commit sha (+"-dirty"). Baked in as CC_BUILD at container-build time by scripts/rebuild.sh. Exists because
+# VERSION alone cannot tell "this IS 0.14.0" from "this is 0.14.0 plus nine unreleased commits" — the running
+# container reported a clean 0.14.0 for days while serving post-tag code, and nothing surfaced the gap.
+# VERSION itself stays a bare semver so is_newer()/the update check are unaffected.
+BUILD = os.environ.get("CC_BUILD", "").strip()
+
+
+def build():
+    """The baked-in `git describe` string, or None when the image was built without one."""
+    return BUILD or None
+
+
+def is_release():
+    """True when the running code is exactly the tagged VERSION, False when it is ahead of/dirty from the
+    tag, and **None when there is no build stamp to judge by**. None is deliberate: an unstamped build must
+    not be reported as a clean release — that is precisely the false-confidence this stamp exists to remove."""
+    if not BUILD:
+        return None
+    return BUILD.lstrip("v") == VERSION
+
+
+def display():
+    """Human-facing version string: '0.14.0' on a release, '0.14.0+02fab5f' on anything past the tag."""
+    if not BUILD or is_release():
+        return VERSION
+    suffix = BUILD.lstrip("v")
+    if suffix.startswith(VERSION + "-"):
+        suffix = suffix[len(VERSION) + 1:]
+    return "%s+%s" % (VERSION, suffix)
+
 
 def runtime():
     """'docker' when running inside a container, else 'native'. Override with CC_RUNTIME=docker|native."""

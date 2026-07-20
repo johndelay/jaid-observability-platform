@@ -89,8 +89,19 @@ endpoint checks. If the Playwright layer is testing a running container, **rebui
 testing the previous build:
 
 ```sh
-docker compose up -d --build --force-recreate
+scripts/rebuild.sh
 ```
+
+Use the script rather than `docker compose up -d --build` directly: it bakes the build stamp (`CC_BUILD`)
+into the image, which is what lets `/health` distinguish the tagged release from post-tag code. A plain
+compose build still works and is honest about it — `/health` reports `release: null` and the About scene
+says *"build unknown"* — but it can't confirm a release.
+
+> **Tag the release AFTER this step but note where the tag lands.** `v0.14.0` points at the *merge commit
+> on `main`* (`706db9b`), which is **not an ancestor of `development`** — so `git describe` run from
+> `development` walks straight past it and reports `v0.13.0-<n>-g<sha>`. That's why the build stamp compares
+> `HEAD` against the tag's commit directly instead of using `git describe`. If you ever switch to tagging on
+> `development` before the merge, revisit `scripts/rebuild.sh`.
 
 ---
 
