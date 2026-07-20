@@ -547,6 +547,27 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     await page.evaluate(() => closeDetail());
   });
 
+  await check('trajectory fit toggle rescales the chart and persists', async () => {
+    const sid = await page.evaluate(() => {
+      const el = document.querySelector('[data-sid]'); return el ? el.getAttribute('data-sid') : null;
+    });
+    if (!sid) throw new Error('no session available to drill into');
+    await page.evaluate(id => openDetail(id), sid);
+    // the chart needs >1 history point; sessions on a fresh dashboard may have only one — skip rather than
+    // assert a precondition this environment doesn't control
+    const hasChart = await page.evaluate(() => !!document.querySelector('[data-sparkfit]'))
+      .catch(() => false);
+    if (!hasChart) { await page.evaluate(() => closeDetail()); return; }
+    const before = await page.evaluate(() => document.querySelector('.sparkax').textContent);
+    await page.$eval('[data-sparkfit]', el => el.click());
+    const after = await page.evaluate(() => document.querySelector('.sparkax').textContent);
+    if (before === after) throw new Error('toggling fit did not change the y-axis ticks');
+    const stored = await page.evaluate(() => localStorage.getItem('cc.spark.fit'));
+    if (stored !== 'true') throw new Error(`fit preference not persisted (got ${stored})`);
+    await page.$eval('[data-sparkfit]', el => el.click());   // restore the default
+    await page.evaluate(() => closeDetail());
+  });
+
   await check('the current scene survives a page reload (does not snap back to Triage)', async () => {
     await page.evaluate(() => { const d = document.getElementById('detail'); if (d && !d.hidden) closeDetail(); });
     await page.evaluate(() => window.goScene && window.goScene(2));
