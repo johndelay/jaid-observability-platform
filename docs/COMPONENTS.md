@@ -66,6 +66,12 @@ change to your environment, so an agent should **ask before wiring them** (per `
 1. **In your terminal**, it prints a status line with: a **friendly session name + color** (the same one the
    dashboard shows, so you can tell *which* terminal matches *which* card); the model; and **two decoupled
    context signals** —
+
+   > **Note:** the statusline's own hue is always the *derived* one (hashed from the session id) — it reads
+   > local files only and can't see the dashboard. If you set a session color from the drill-in, that
+   > recolors the **dashboard badge** and Claude Code's **prompt bar** (via `/color` injection); the
+   > statusline name stays put, which is what you match terminals on anyway.
+
    - **compaction proximity** = `% of the context window`, colored 🟢 (<60%) / 🟡 (≥60%, "consider /compact")
      / 🔴 (≥85%, "⚠ /compact now"). This is the hard wall.
    - **dumb-zone note** = a dim, quiet `🧠 long context` once absolute context passes ~120k tokens

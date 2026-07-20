@@ -97,6 +97,41 @@ CC_RUNTIME=native ./.venv/bin/cc-observability          # or: python3 server.py
 checkout, set `CC_WEB_DIR` to the `web/` location. Native binds the content-search port to `127.0.0.1`
 directly (no Docker masquerade → no dual-port firewall).
 
+## Launch a session that's fully wired
+
+Any Claude Code session on a host running the watcher shows up here on its own — no launch flags needed.
+The steps below unlock the rest: live state, exact cost, and the ability to **answer or recolor a session
+from the dashboard**. Each level is additive, and you can stop at any of them.
+
+**1 · Launch inside tmux — the one that must happen at launch time.**
+
+```bash
+tmux new -s work -c ~/your/project claude       # or just run `claude` if you're already in tmux
+```
+
+The state hook records `session_id → $TMUX_PANE` on every event, and that pane is where the dashboard
+injects replies and `/color`. **You cannot add this to an already-running session** — a session started
+outside tmux stays read-only for its whole life. It still appears here with full metrics; it just can't be
+written to (the drill-in's 🎨 color picker will say *"dashboard only"*).
+
+**2 · Wire the host once** — the two `~/.claude/settings.json` entries described in the next section: the
+**statusline** (authoritative window size, exact cost, rate limits, account) and the **state hooks** on all
+7 events (precise "needs you", compaction/skill/subagent events, and the tmux pane above). Needs `jq` on
+`PATH`. `/jaid-setup` in any Claude Code session will do it for you, or wire them by hand. **Takes effect on
+the next session** — `settings.json` is read at launch.
+
+**3 · To write back to a session** (answer-from-phone, `/color`): set `CC_ACCESS_PIN` on the server — it
+gates shell injection and the write path hard-refuses without it — and run the **responder** on that host
+via `./deploy-responder.sh`. The responder must run natively; the container can't reach host tmux. Full
+detail in [Answer from phone](#answer-from-phone-e5).
+
+| You get | Needs |
+|---|---|
+| Session appears, tokens, cost estimate, context % | watcher on the host |
+| Exact cost, true window size, rate limits, account | statusline |
+| Precise "needs you", compaction/skill/subagent events | state hooks |
+| Answer from phone · set session color from the dashboard | **launched in tmux** + hooks + PIN + responder |
+
 ## Remote hosts (multi-host, later)
 
 Run the dashboard once (anywhere), then on each *other* Claude machine run `watcher.py`

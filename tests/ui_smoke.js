@@ -1536,6 +1536,66 @@ check('renderUpdate: shows banner + verb when newer, hidden otherwise, dismissab
   if (document.getElementById('updatebar').style.display !== 'none') throw new Error('banner should hide when up-to-date');
 });
 
+// 20) session color: the badge honors an explicit s.color, falls back to the derived hue without one, and the
+//     drill-in picker renders 8 swatches + a reset, marks the current one, and states when it's dashboard-only.
+check('badge hue prefers s.color over the derived ident() hue', () => {
+  // cyan is 190 in COLOR_HUE; the derived hue is an FNV-1a hash and must not equal it for this session
+  ctx.render([{ ...STATE[0], session_id: 'colorful', color: 'cyan' }]);
+  const withColor = document.getElementById('app').innerHTML;
+  if (!withColor.includes('--h:190')) throw new Error('badge did not use the chosen color hue (cyan → 190)');
+  ctx.render([{ ...STATE[0], session_id: 'colorful' }]);          // same sid, no color → derived
+  const noColor = document.getElementById('app').innerHTML;
+  if (noColor.includes('--h:190')) throw new Error('badge used the color hue when no color was set');
+  if (!/--h:\d+/.test(noColor)) throw new Error('badge lost its derived hue entirely');
+  // an unknown color must not blank the badge — it falls back rather than rendering --h:undefined
+  ctx.render([{ ...STATE[0], session_id: 'colorful', color: 'chartreuse' }]);
+  if (document.getElementById('app').innerHTML.includes('--h:undefined')) {
+    throw new Error('unknown color should fall back to the derived hue, not emit --h:undefined');
+  }
+});
+
+check('colorPicker renders 8 swatches + reset, marks current, flags no-tmux sessions', () => {
+  if (typeof ctx.colorPicker !== 'function') throw new Error('colorPicker() not defined');
+  const injectable = ctx.colorPicker({ session_id: 's1', color: 'pink', answerable: true, reply_enabled: true });
+  const swatches = (injectable.match(/data-color="/g) || []).length;
+  if (swatches !== 9) throw new Error(`expected 8 colors + 1 reset = 9 swatches, got ${swatches}`);
+  if (!injectable.includes('class="swatch on" data-color="pink"')) {
+    throw new Error('the currently-set color should be marked .on');
+  }
+  if (injectable.includes('dashboard only')) throw new Error('an answerable session must not be labelled dashboard-only');
+  // no tmux target → still offers the picker, but says the terminal will not change
+  const dashOnly = ctx.colorPicker({ session_id: 's2', answerable: false, reply_enabled: true });
+  if (!dashOnly.includes('dashboard only')) throw new Error('a non-answerable session should be labelled dashboard-only');
+  if (!dashOnly.includes('class="swatch reset on"')) throw new Error('with no color set, the reset swatch should be .on');
+  if (ctx.colorPicker(null) !== '') throw new Error('colorPicker(null) should render nothing');
+});
+
+check('setColor ignores a color outside the allowlist', () => {
+  if (typeof ctx.setColor !== 'function') throw new Error('setColor() not defined');
+  ctx.render(STATE);
+  ctx.openDetail('abc12345-aaaa');
+  const before = (win._cards['abc12345-aaaa'] || {}).color;
+  return Promise.resolve(ctx.setColor('abc12345-aaaa', 'chartreuse')).then(() => {
+    if ((win._cards['abc12345-aaaa'] || {}).color !== before) {
+      throw new Error('an out-of-allowlist color must not be applied');
+    }
+  });
+});
+
+// 21) launch-a-session modal: the in-app answer to "how do I start a session I can write back to?"
+check('launchModalBody covers tmux, host wiring, the PIN, and the read-only caveat', () => {
+  if (typeof ctx.launchModalBody !== 'function') throw new Error('launchModalBody() not defined');
+  const b = ctx.launchModalBody();
+  for (const [re, what] of [[/tmux new/, 'the tmux launch command'], [/jaid-setup/, 'the host-wiring step'],
+                            [/CC_ACCESS_PIN/, 'the PIN requirement'], [/responder/i, 'the responder requirement'],
+                            [/read-only/i, 'the no-tmux read-only caveat'], [/jq/, 'the jq dependency']]) {
+    if (!re.test(b)) throw new Error(`launch modal is missing ${what}`);
+  }
+  // the caveat must be stated as unfixable-after-launch, which is the whole reason this is in the app
+  if (!/already running|at launch time/i.test(b)) throw new Error('launch modal should say tmux cannot be added to a running session');
+  if (!/data-copy="tmux new[^"]*"/.test(b)) throw new Error('the tmux command should be copy-able');
+});
+
 // ---- report ----
 let failed = 0;
 for (const [ok, name] of results) { console.log((ok ? '  PASS ' : '  FAIL ') + name); if (!ok) failed++; }

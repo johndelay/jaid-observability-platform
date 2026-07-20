@@ -443,8 +443,10 @@ def snapshot_state():
         enrich_from_store(items, now)
         try:                                  # tag user-archived sessions so the client can hide them
             hid = _store.hidden_sessions()
+            cols = _store.session_colors()    # user-chosen identity color; absent → client derives the hue
             for it in items:
                 it["hidden"] = it.get("session_id") in hid
+                it["color"] = cols.get(it.get("session_id"))
         except Exception:                     # noqa: BLE001 — a DB hiccup must never break /state
             pass
     # hero first: needs-me, then non-stale, then fullest context
@@ -837,12 +839,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         hidden = body.get("hidden")
         nickname = body.get("nickname")
-        if hidden is None and nickname is None:
+        color = body.get("color")
+        if hidden is None and nickname is None and color is None:
             self._send_json({"ok": False, "reason": "noop", "detail": "nothing to set"}, 400)
             return
-        ok = _store.set_session_pref(sid, hidden=hidden, nickname=nickname)
+        # Allowlist the color: "" (or null-ish) clears back to the derived hue, anything else must be one of
+        # Claude Code's /color names. This value is echoed into the UI and mirrors what gets injected as a
+        # slash command, so an unknown string has no legitimate use.
+        if color is not None:
+            import store as _sm                # local: store is imported lazily (optional dependency)
+            color = str(color).strip().lower()
+            if color and color not in _sm.SESSION_COLORS:
+                self._send_json({"ok": False, "reason": "bad_color",
+                                 "detail": "color must be one of: " + ", ".join(_sm.SESSION_COLORS)}, 400)
+                return
+        ok = _store.set_session_pref(sid, hidden=hidden, nickname=nickname, color=color)
         self._send_json({"ok": bool(ok), "session_id": sid,
-                         "hidden": sid in _store.hidden_sessions()})
+                         "hidden": sid in _store.hidden_sessions(),
+                         "color": _store.session_colors().get(sid)})
 
     def _cost(self):
         """Cost history + current 5h-block burn (Sprint 3). Empty-but-valid if the store is off."""
