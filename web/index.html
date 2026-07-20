@@ -421,6 +421,17 @@
     background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:8px 12px}
   .dactions button:hover,.ubtn:hover{border-color:var(--accent)}
   .ubtn{font-size:11px;padding:5px 9px}
+  /* drill-in session color picker: persists the badge hue AND injects /color into the terminal */
+  .dcolor{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+  .dcolor .cl{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.3px}
+  .swatches{display:flex;flex-wrap:wrap;gap:6px}
+  .swatch{width:26px;height:26px;border-radius:8px;cursor:pointer;padding:0;line-height:1;
+    background:hsl(var(--h),70%,55%);border:2px solid transparent;box-shadow:0 0 0 1px var(--line) inset}
+  .swatch:hover{transform:scale(1.08)}
+  .swatch.on{border-color:var(--txt)}
+  .swatch.reset{background:var(--card2);color:var(--muted);font-size:13px;font-weight:700}
+  .dcolor .cmsg{font-size:11px;color:var(--muted);min-height:14px}
+  .dcolor .cmsg.err{color:var(--red)}
   /* context-health "dumb zone" banner (drill-in) */
   .zone{display:flex;flex-direction:column;gap:2px;border-radius:10px;padding:9px 12px;margin-bottom:10px;
     border:1px solid var(--line);background:var(--card2)}
@@ -775,7 +786,13 @@ const ADJ=["brave","calm","swift","keen","wise","bold","sly","spry","lush","nova
 const NOUN=["otter","falcon","lynx","koi","yak","wren","ibex","moth","fern","comet","puma","crane","heron","sage","wolf"];
 function hash(s){let h=2166136261>>>0;for(let i=0;i<(s||'').length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h;}
 function ident(sid){const h=hash(sid);return {name:ADJ[h%ADJ.length]+"-"+NOUN[(Math.floor(h/16))%NOUN.length], hue:h%360};}
-const badge=s=>{const id=ident(s.session_id);return `<span class="badge" style="--h:${id.hue}"><i></i>${id.name}</span>`;};
+// Claude Code's 8 `/color` names → the hue the badge dot uses. Same vocabulary the server allowlists and the
+// same word we inject as `/color <name>`, so the dashboard row and the terminal prompt bar agree. A session
+// with no chosen color falls back to the hash-derived hue (the original behavior).
+const COLOR_HUE={red:0,orange:25,yellow:50,green:140,cyan:190,blue:215,purple:280,pink:330};
+const COLOR_NAMES=Object.keys(COLOR_HUE);
+const sessHue=s=>(s&&s.color&&COLOR_HUE[s.color]!=null)?COLOR_HUE[s.color]:ident(s&&s.session_id).hue;
+const badge=s=>{const id=ident(s.session_id);return `<span class="badge" style="--h:${sessHue(s)}"><i></i>${id.name}</span>`;};
 
 const fmt=n=>n==null?'—':(n>=1000?(n/1000).toFixed(n>=100000?0:1)+'k':String(n));
 const usd=n=>n==null?'':'$'+(n<1?n.toFixed(3):n.toFixed(2));
@@ -2676,10 +2693,12 @@ dstats.addEventListener('click',e=>{
   const cp=e.target.closest('[data-copy]');
   if(cp){ copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp'); if(!c)return;
     const o=c.textContent; c.textContent=ok?'✓ copied':'⚠ copy failed'; setTimeout(()=>{c.textContent=o;},1500); }); return; }
+  const sw=e.target.closest('[data-color]');
+  if(sw&&openSid){ setColor(openSid,sw.getAttribute('data-color')); return; }
   const ac=e.target.closest('[data-action]');
   if(ac&&openSid){ const a=ac.getAttribute('data-action'); if(a==='hide')hideSession(openSid); else if(a==='unhide')unhideSession(openSid); }
 });
-function openDetail(sid){openSid=sid;histPts=[];evData=null;detail.hidden=false;dstream.innerHTML='<div class="muted" style="padding:20px">loading…</div>';
+function openDetail(sid){openSid=sid;histPts=[];evData=null;colorMsg='';colorMsgCls='';detail.hidden=false;dstream.innerHTML='<div class="muted" style="padding:20px">loading…</div>';
   rtext.value='';setRmsg('');autosize();renderDetailStats();fetchHistory(sid);fetchEvents(sid);pollAct();if(actTimer)clearInterval(actTimer);actTimer=setInterval(pollAct,2500);}
 // context trajectory for the sparkline — fetched once on open (it grows slowly); re-renders stats when it lands.
 async function fetchHistory(sid){
@@ -2730,8 +2749,44 @@ function renderDetailStats(){
     ${resumeHint(s)}
     <div class="dactions">${s.hidden
       ?'<button data-action="unhide">♻ Un-hide</button>'
-      :'<button data-action="hide">🗂 Archive (hide from Triage)</button>'}</div>`;
+      :'<button data-action="hide">🗂 Archive (hide from Triage)</button>'}</div>
+    ${colorPicker(s)}`;
   updateReplyBar(s);
+}
+// ---- session color: one control, two effects ----------------------------------------------------
+// Picking a color (a) persists it via /pref so the dashboard badge shows it on every device, and (b) when the
+// session has a live tmux target, injects `/color <name>` via the answer-from-phone path so Claude Code's own
+// prompt bar matches. Without a tmux target (b) is skipped and we say so — the badge still recolors.
+function colorPicker(s){
+  if(!s||!s.session_id)return '';
+  const cur=s.color||'';
+  const sw=COLOR_NAMES.map(n=>`<button class="swatch${cur===n?' on':''}" data-color="${n}" title="${n}" `+
+    `aria-label="${n}" style="--h:${COLOR_HUE[n]}"></button>`).join('');
+  const canInject=!!(s.answerable&&s.reply_enabled);
+  return `<div class="dcolor">
+    <span class="cl">🎨 Session color${canInject?'':' · dashboard only (no tmux target for this session)'}</span>
+    <div class="swatches">${sw}<button class="swatch reset${cur?'':' on'}" data-color="" title="default" aria-label="default">⟲</button></div>
+    <div class="cmsg${colorMsgCls?' '+colorMsgCls:''}">${esc(colorMsg)}</div>
+  </div>`;
+}
+let colorMsg='', colorMsgCls='';           // survives the innerHTML rebuild that renderDetailStats does
+function setColorMsg(t,cls){colorMsg=t||'';colorMsgCls=cls||'';if(openSid)renderDetailStats();}
+async function setColor(sid,name){
+  if(name&&COLOR_HUE[name]==null)return;                       // only ever our own 8 names, or '' to reset
+  const s=(window._cards||{})[sid];
+  if(s)s.color=name||null;                                     // shared ref with window._list → optimistic
+  setColorMsg(name?'setting '+name+'…':'clearing…','');
+  render(window._list||[]);
+  const okPref=await setPref(sid,{color:name});
+  if(!okPref){setColorMsg('could not save the color','err');return;}
+  if(!(s&&s.answerable&&s.reply_enabled)){setColorMsg(name?'badge set to '+name:'badge reset','');return;}
+  try{
+    const r=await fetch('/reply',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({session_id:sid,text:'/color '+(name||'default')})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.ok)setColorMsg('✓ '+(name||'default')+' — badge + prompt bar','');
+    else setColorMsg('badge set; terminal not updated ('+((d&&d.reason)||r.status)+')','err');
+  }catch(_){setColorMsg('badge set; terminal not reachable','err');}
 }
 // Resume hint: how to pick this session back up in a terminal. The transcript snapshot doesn't carry the
 // cwd, so we give the host/project-scoped `claude --resume <id>` (run it on that host, in that project) +

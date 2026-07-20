@@ -106,11 +106,15 @@ CREATE TABLE IF NOT EXISTS rate_history (
 CREATE INDEX IF NOT EXISTS idx_rate_history ON rate_history(account, window, ts);
 
 -- Per-session UI prefs that must follow the user across devices (unlike per-device localStorage):
--- hidden = the user archived this session out of Triage; nickname = a user-given name (reserved).
+-- hidden = the user archived this session out of Triage; nickname = a user-given name (reserved);
+-- color = a user-chosen identity color (one of Claude Code's 8 /color names, or NULL = derive the hue
+-- from the session_id hash as before). The dashboard badge reads it so the row matches the prompt bar
+-- that the same UI control sets via /color injection.
 CREATE TABLE IF NOT EXISTS session_prefs (
   session_id TEXT PRIMARY KEY,
   hidden     INTEGER DEFAULT 0,
   nickname   TEXT,
+  color      TEXT,
   updated_at REAL
 );
 
@@ -221,11 +225,24 @@ def _mig_002_rate_history_unique(db):
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_rate_history ON rate_history(account, window, ts)")
 
 
+def _mig_003_session_prefs_color(db):
+    """session_prefs.color — user-chosen identity color, added after the original schema shipped."""
+    cols = {r[1] for r in db.execute("PRAGMA table_info(session_prefs)")}
+    if "color" not in cols:
+        db.execute("ALTER TABLE session_prefs ADD COLUMN color TEXT")
+
+
 _MIGRATIONS = [
     (1, _mig_001_usage_columns),
     (2, _mig_002_rate_history_unique),
+    (3, _mig_003_session_prefs_color),
 ]
 _CODE_SCHEMA_VERSION = _MIGRATIONS[-1][0] if _MIGRATIONS else 0
+
+# The identity colors a session may be set to — exactly Claude Code's `/color` names, because the same UI
+# control both persists the color here AND injects `/color <name>` into the session's terminal. Keeping the
+# two vocabularies identical is what makes the dashboard badge and the prompt bar agree. NULL/"" = derived.
+SESSION_COLORS = ("red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan")
 
 # Tables a portable bundle may import into (whitelist — the import table name must be one of these).
 _IMPORT_TABLES = ("usage", "events", "rate_history", "session_account", "session_prefs", "mcp_reports", "meta")
@@ -447,21 +464,27 @@ class Store:
         r = self._one("SELECT account FROM session_account WHERE session_id=?", (session_id,))
         return r["account"] if r else None
 
-    def set_session_pref(self, session_id, hidden=None, nickname=None):
+    def set_session_pref(self, session_id, hidden=None, nickname=None, color=None):
         """Upsert a session's UI prefs. Only the fields passed (not None) change; the rest are preserved.
-        hidden is coerced to 0/1. No-op without a session_id. Returns True if written."""
+        hidden is coerced to 0/1. color="" clears back to the derived hue (None = leave alone), so the
+        caller can distinguish "don't touch" from "reset to default". No-op without a session_id.
+        Returns True if written."""
         if not session_id:
             return False
         with self._lock:
             row = self._db.execute(
-                "SELECT hidden, nickname FROM session_prefs WHERE session_id=?", (session_id,)).fetchone()
+                "SELECT hidden, nickname, color FROM session_prefs WHERE session_id=?", (session_id,)).fetchone()
             h = (1 if hidden else 0) if hidden is not None else (row["hidden"] if row else 0)
             nk = nickname if nickname is not None else (row["nickname"] if row else None)
+            if color is None:
+                col = row["color"] if row else None
+            else:
+                col = color or None                       # "" → NULL (back to the hash-derived hue)
             self._db.execute(
-                "INSERT INTO session_prefs (session_id, hidden, nickname, updated_at) VALUES (?,?,?,?) "
+                "INSERT INTO session_prefs (session_id, hidden, nickname, color, updated_at) VALUES (?,?,?,?,?) "
                 "ON CONFLICT(session_id) DO UPDATE SET hidden=excluded.hidden, nickname=excluded.nickname, "
-                "  updated_at=excluded.updated_at",
-                (session_id, h, nk, time.time()))
+                "  color=excluded.color, updated_at=excluded.updated_at",
+                (session_id, h, nk, col, time.time()))
             self._db.commit()
         return True
 
@@ -470,9 +493,14 @@ class Store:
         return {r["session_id"] for r in self._all("SELECT session_id FROM session_prefs WHERE hidden=1")}
 
     def session_prefs_all(self):
-        """All session prefs as {session_id: {hidden, nickname}} (for tooling/inspection)."""
-        return {r["session_id"]: {"hidden": bool(r["hidden"]), "nickname": r["nickname"]}
-                for r in self._all("SELECT session_id, hidden, nickname FROM session_prefs")}
+        """All session prefs as {session_id: {hidden, nickname, color}} (for tooling/inspection)."""
+        return {r["session_id"]: {"hidden": bool(r["hidden"]), "nickname": r["nickname"], "color": r["color"]}
+                for r in self._all("SELECT session_id, hidden, nickname, color FROM session_prefs")}
+
+    def session_colors(self):
+        """{session_id: color} for sessions with a user-chosen identity color (skips the derived default)."""
+        return {r["session_id"]: r["color"]
+                for r in self._all("SELECT session_id, color FROM session_prefs WHERE color IS NOT NULL")}
 
     def reattribute_accounts(self, only_null=False):
         """Re-derive usage rows' account from the session_account map: known session → its account,

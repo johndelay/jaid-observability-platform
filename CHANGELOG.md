@@ -8,6 +8,16 @@ This is a curated, user-facing log — for the full commit history see the Git l
 
 ## [Unreleased]
 
+### Added
+- **Set a session's identity color from the dashboard.** The drill-in now has a swatch row with Claude
+  Code's eight `/color` names plus a ⟲ reset. Picking one does two things: it persists the color (so the
+  session's badge shows it on every device, replacing the hash-derived hue), and — when the session has a
+  live tmux target — it injects `/color <name>` through the existing answer-from-phone path so Claude
+  Code's own prompt bar matches. That makes a session identifiable at a glance in both places, and
+  deliberately *chosen* rather than assigned by a hash. Sessions without a tmux target still get the badge
+  color; the picker says so rather than failing silently. The color is stored in `session_prefs.color`
+  (schema migration 003) and `/pref` allowlists it to the eight known names.
+
 ### Changed
 - **The session % gauge now shows distance-to-auto-compaction, not raw context-window fill.** It used to
   read `tokens / full window` (e.g. 93%), which trailed Claude Code's own "100% context used" indicator —

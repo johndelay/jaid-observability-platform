@@ -139,6 +139,31 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
       if (!has) throw new Error('Archive/hide action missing from drill-in');
     });
 
+    await check('drill-in exposes a session color picker', async () => {
+      const n = await page.evaluate(() => {
+        const d = document.getElementById('dstats');
+        return d ? (d.innerHTML.match(/data-color="/g) || []).length : 0;
+      });
+      if (n !== 9) throw new Error(`expected 8 colors + reset = 9 swatches in the drill-in, got ${n}`);
+    });
+
+    await check('clicking a swatch persists the color and recolors the badge', async () => {
+      await page.evaluate(() => document.querySelector('#dstats [data-color="cyan"]').click());
+      // the click fires setColor → /pref; wait for the server to have it rather than racing the render
+      await page.waitForFunction(async () => {
+        const r = await fetch('/state'); if (!r.ok) return false;
+        const st = await r.json();
+        return st.some(s => s.color === 'cyan');
+      }, null, { timeout: 5000 });
+      const hue = await page.evaluate(() => {
+        const d = document.getElementById('dstats');
+        return d && d.innerHTML.includes('class="swatch on" data-color="cyan"');
+      });
+      if (!hue) throw new Error('the cyan swatch was not marked current after clicking it');
+      // reset it so the run leaves no state behind
+      await page.evaluate(() => document.querySelector('#dstats [data-color=""]').click());
+    });
+
     await check('drill-in shows a context-health (dumb-zone) banner', async () => {
       const has = await page.evaluate(() => { const d = document.getElementById('dstats'); return !!d && /class="zone z-(sharp|good|drift|danger|auto)"/.test(d.innerHTML); });
       if (!has) throw new Error('dumb-zone banner missing from drill-in');

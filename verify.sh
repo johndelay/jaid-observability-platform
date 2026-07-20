@@ -92,6 +92,21 @@ if curl -s -o /dev/null --connect-timeout 3 "$URL/health" 2>/dev/null; then
     echo "  PASS /coach returns bundle + recent sessions"; else echo "  FAIL /coach bad response"; FAIL=$((FAIL+1)); fi
   rc=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{"narrative":"x"}' "$URL/coach-result")
   if [ "$rc" = "401" ]; then echo "  PASS /coach-result rejects no-token (401)"; else echo "  FAIL /coach-result token gate -> $rc (want 401)"; FAIL=$((FAIL+1)); fi
+  # Session color: /pref allowlists the 8 /color names and round-trips the choice into /state.
+  # NB: assert reason=="bad_color", not just the 400 — a build without this feature also 400s here, but with
+  # reason "noop" (no recognized field), which would be a false PASS.
+  if curl -s -b "$JAR" -X POST -H 'Content-Type: application/json' \
+       --data '{"session_id":"verify-color-probe","color":"chartreuse"}' "$URL/pref" \
+       | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d.get("reason")=="bad_color",d' 2>/dev/null; then
+    echo "  PASS /pref rejects an unknown color (bad_color)"; else echo "  FAIL /pref color allowlist did not report bad_color"; FAIL=$((FAIL+1)); fi
+  if curl -s -b "$JAR" -X POST -H 'Content-Type: application/json' \
+       --data '{"session_id":"verify-color-probe","color":"cyan"}' "$URL/pref" \
+       | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d.get("ok") and d.get("color")=="cyan"' 2>/dev/null; then
+    echo "  PASS /pref accepts a valid color"; else echo "  FAIL /pref did not accept color=cyan"; FAIL=$((FAIL+1)); fi
+  if curl -s -b "$JAR" -X POST -H 'Content-Type: application/json' \
+       --data '{"session_id":"verify-color-probe","color":""}' "$URL/pref" \
+       | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d.get("ok") and d.get("color") is None' 2>/dev/null; then
+    echo "  PASS /pref clears a color back to the derived hue"; else echo "  FAIL /pref did not clear the color"; FAIL=$((FAIL+1)); fi
   # V9 content firewall: the LAN port must WALL raw-content search; the loopback content port serves it.
   if curl -s -b "$JAR" "$URL/search-meta" | python3 -c 'import sys,json;assert json.load(sys.stdin).get("local") is False' 2>/dev/null; then
     echo "  PASS /search-meta is local:false on the LAN port"; else echo "  FAIL /search-meta should be local:false on LAN"; FAIL=$((FAIL+1)); fi

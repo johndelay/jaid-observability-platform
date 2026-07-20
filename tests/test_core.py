@@ -688,12 +688,31 @@ class StoreTests(unittest.TestCase):
         # partial update: setting nickname only must NOT clear hidden
         self.s.set_session_pref("sid-1", nickname="my run")
         self.assertEqual(self.s.hidden_sessions(), {"sid-1"})
-        self.assertEqual(self.s.session_prefs_all()["sid-1"], {"hidden": True, "nickname": "my run"})
+        self.assertEqual(self.s.session_prefs_all()["sid-1"],
+                         {"hidden": True, "nickname": "my run", "color": None})
         # un-hide; nickname preserved
         self.s.set_session_pref("sid-1", hidden=False)
         self.assertEqual(self.s.hidden_sessions(), set())
         self.assertEqual(self.s.session_prefs_all()["sid-1"]["nickname"], "my run")
         self.assertFalse(self.s.set_session_pref(None, hidden=True))   # no session_id → no-op
+
+    def test_session_color_set_preserve_and_clear(self):
+        self.assertEqual(self.s.session_colors(), {})
+        self.s.set_session_pref("sid-c", color="cyan")
+        self.assertEqual(self.s.session_colors(), {"sid-c": "cyan"})
+        # a partial update on another field must NOT clear the color
+        self.s.set_session_pref("sid-c", hidden=True)
+        self.assertEqual(self.s.session_colors(), {"sid-c": "cyan"})
+        self.assertEqual(self.s.hidden_sessions(), {"sid-c"})
+        # ...and setting a color must not clear hidden
+        self.s.set_session_pref("sid-c", color="pink")
+        self.assertEqual(self.s.session_colors(), {"sid-c": "pink"})
+        self.assertEqual(self.s.hidden_sessions(), {"sid-c"})
+        # "" clears back to the derived hue; None would have meant "leave alone"
+        self.s.set_session_pref("sid-c", color="")
+        self.assertEqual(self.s.session_colors(), {})
+        self.assertEqual(self.s.session_prefs_all()["sid-c"]["color"], None)
+        self.assertEqual(self.s.hidden_sessions(), {"sid-c"})           # still preserved
 
     def test_session_context_series_ordered_excludes_sidechain(self):
         now = time.time()
@@ -1397,6 +1416,26 @@ class PrefEndpointTests(unittest.TestCase):
         self.assertTrue(item["hidden"])                       # /state surfaces the hide across the boundary
         st3, resp3 = self._req("POST", "/pref", {"session_id": "sid-A", "hidden": False})
         self.assertFalse(resp3["hidden"])
+
+    def test_pref_color_roundtrips_to_state_and_clears(self):
+        st, resp = self._req("POST", "/pref", {"session_id": "sid-A", "color": "cyan"})
+        self.assertEqual(st, 200)
+        self.assertTrue(resp["ok"]); self.assertEqual(resp["color"], "cyan")
+        st2, state = self._req("GET", "/state")
+        item = next(x for x in state if x["session_id"] == "sid-A")
+        self.assertEqual(item["color"], "cyan")               # /state carries it so the badge can render it
+        st3, resp3 = self._req("POST", "/pref", {"session_id": "sid-A", "color": ""})
+        self.assertEqual(st3, 200)
+        self.assertIsNone(resp3["color"])                     # "" resets to the hash-derived hue
+
+    def test_pref_color_rejects_unknown_name(self):
+        st, resp = self._req("POST", "/pref", {"session_id": "sid-A", "color": "chartreuse"})
+        self.assertEqual(st, 400)
+        self.assertFalse(resp["ok"]); self.assertEqual(resp["reason"], "bad_color")
+        # and the rejection must not have written anything
+        st2, state = self._req("GET", "/state")
+        item = next(x for x in state if x["session_id"] == "sid-A")
+        self.assertIsNone(item["color"])
 
     def test_pref_requires_session_id(self):
         st, resp = self._req("POST", "/pref", {"hidden": True})
