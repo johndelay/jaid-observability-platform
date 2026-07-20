@@ -12,6 +12,27 @@ Work on `development` throughout; `main` is only ever reached by a merge (step 5
 
 ---
 
+## 0. Run the gate
+
+```sh
+scripts/check-release-ready.sh
+```
+
+**Exit 1 blocks the release.** It fails when `[Unreleased]` is empty while commits have landed since the
+last tag, when a security-relevant commit has no `### Security` section to go with it, or when
+`version.py` / `pyproject.toml` / `manifest.json` disagree. It prints the unrecorded commits, so step 1
+becomes "write up this list" rather than "try to remember six weeks."
+
+> **Why step 0 exists.** The completeness warning in step 1 was written after 0.14.0 shipped with ~8
+> bullets against 57 commits — and 0.15.0 was then reached with `[Unreleased]` still reading
+> *"Nothing yet."* against 8 commits, one of which stripped a real hostname from a public repo.
+> **The prose did not prevent the repeat.** A missing changelog entry is invisible by construction: nobody
+> reads a changelog and notices what isn't there. Replay it against that failure to see it fire:
+> `scripts/check-release-ready.sh --changelog <old> --since v0.14.0 --ref 5ced9d2`.
+> The gate's own regression suite (`--self-test`) runs inside `./verify.sh`.
+
+---
+
 ## 1. Promote the changelog
 
 `CHANGELOG.md` accumulates under `## [Unreleased]` as work lands. Turn that into a dated release heading
@@ -25,13 +46,16 @@ _Nothing yet._
 ## [0.14.0] — 2026-07-19
 ```
 
-**Check the section is actually complete before promoting it.** Entries get missed — 0.14.0 was cut with
-only ~8 bullets recorded against 57 non-merge commits, and the gap included two security-review batches.
-Diff the log against the last tag and fill in what's missing:
+**Step 0's gate already printed the unrecorded commits — write those up here.** To see the list again, or
+to check a range by hand (note the tag, not `git describe`):
 
 ```sh
-git log --oneline --no-merges v0.13.0..HEAD
+git log --oneline --no-merges v0.15.0..HEAD
 ```
+
+The gate proves the section is non-empty and that security work has a `### Security` section. It cannot
+judge whether a bullet is *accurate* or whether one entry fairly covers five commits — that judgement is
+still yours. Treat a green gate as "nothing is obviously missing", not "the changelog is right."
 
 Give **security fixes their own `### Security` section** rather than folding them into `### Changed`.
 They're the entries most likely to decide whether someone upgrades, and they should be findable.
