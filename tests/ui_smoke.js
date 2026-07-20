@@ -539,10 +539,29 @@ check('sparkline carries y-axis ticks, clamped to what is on the plot', () => {
   if (!deep.includes('250.0k')) throw new Error('peak value not labelled on the y-axis');
   if (!deep.includes('200.0k') || !deep.includes('120.0k')) throw new Error('zone-boundary ticks (200k/120k) missing');
   if (!deep.includes('stroke-dasharray')) throw new Error('boundary gridlines missing (ticks would align to nothing)');
-  // a shallow session peaks below both boundaries — neither tick belongs on the plot
-  const shal = ctx.svgSpark([{ ts: t - 600, ctx: 1000 }, { ts: t, ctx: 9000 }]);
+  // in FIT mode the ceiling is the session's own peak, so a boundary above it isn't on the plot at all
+  const shal = ctx.svgSpark([{ ts: t - 600, ctx: 1000 }, { ts: t, ctx: 9000 }], { fit: true });
   if (shal.includes('200.0k') || shal.includes('120.0k'))
-    throw new Error('a zone boundary above the plot peak must not be drawn as a tick');
+    throw new Error('a zone boundary above the plot peak must not be drawn as a tick in fit mode');
+});
+
+// 9j4) y-SCALE. Fit-to-peak pins the newest point to the ceiling (context only grows), so every session
+// draws the same picture and the zone bands never land twice in the same place. The default is an absolute
+// ladder instead. Guards both the comparability property and the "drift band is always visible" floor.
+check('trajectory y-axis: absolute ladder by default, fit-to-peak on request', () => {
+  const t = Date.now() / 1000;
+  const series = peak => [{ ts: t - 600, ctx: 1000 }, { ts: t, ctx: peak }];
+  // two very different sessions must NOT share a ceiling by default...
+  const small = ctx.svgSpark(series(60000)), big = ctx.svgSpark(series(240000));
+  if (!small.includes('150.0k')) throw new Error('a 60k session should snap to the 150k rung');
+  if (!big.includes('250.0k')) throw new Error('a 240k session should snap to the 250k rung');
+  // ...and the drift band must be on the plot even for the smallest session, or the chart can't show risk
+  if (!small.includes('120.0k')) throw new Error('the 120k drift band must be visible at the lowest rung');
+  // ...while fit mode collapses both to their own peak (the old, non-comparable behaviour)
+  if (!ctx.svgSpark(series(60000), { fit: true }).includes('60.0k'))
+    throw new Error('fit mode should scale to the session peak');
+  // a session past the top rung must still render rather than falling off the ladder
+  if (!ctx.svgSpark(series(1400000)).includes('<path')) throw new Error('a >1M session should still draw');
 });
 
 // 9j2) conflation fix: a low-% / high-abs-token tile DECOUPLES the two signals — the % keeps its

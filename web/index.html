@@ -452,8 +452,10 @@
   .zone.z-danger,.zone.z-auto{border-color:rgba(255,51,102,.55);background:rgba(255,51,102,.08)} .zone.z-danger .zl,.zone.z-auto .zl{color:var(--red)}
   /* drill-in context-trajectory sparkline */
   .spark{margin:8px 0;border:1px solid var(--line);border-radius:9px;padding:7px 9px;background:var(--card2)}
-  .spark .sl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:2px}
+  .spark .sl{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:2px}
   /* y-axis gutter: the plot is auto-scaled, so without these ticks you can see the SHAPE but not the VALUES */
+  .sparkfit{display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0;cursor:pointer}
+  .sparkfit input{margin:0;vertical-align:middle}
   .sparkbody{display:flex;align-items:stretch;gap:5px}
   .sparkax{position:relative;flex:0 0 34px;font-size:9px;color:var(--muted);font-variant-numeric:tabular-nums}
   .sparkax i{position:absolute;right:0;transform:translateY(-50%);font-style:normal;white-space:nowrap;line-height:1}
@@ -842,6 +844,9 @@ const pctc=s=>(s&&s.pct_compact!=null)?s.pct_compact:(s&&s.pct!=null?s.pct:0);
 // not % of window — so zones key off context_tokens, with a proximity-to-auto-compact override so a small
 // (200k-window) session at the wall still flags red. Thresholds = one tunable constant (v2 calibrates per model).
 const ZONE_TOK={good:50000, drift:120000, danger:200000};   // absolute context_tokens boundaries
+// Snap points for the trajectory chart's y-ceiling (see svgSpark). Deliberately coarse: a ladder that steps
+// rarely keeps the zone bands in the same place long enough to be worth learning.
+const SPARK_RUNGS=[150000, 250000, 400000, 700000, 1000000];
 function zone(s){
   const ctx=(s&&s.context_tokens)||0, ptc=(s&&s.pct_to_compact)||0;
   // WINDOW WALL first — the only thing that should ever say "auto-compact". Keyed off % to compact.
@@ -1746,7 +1751,14 @@ function svgSpark(pts,opts){
   opts=opts||{}; const w=opts.w||320, h=opts.h||56;
   if(!pts||pts.length<2) return '';
   const xs=pts.map(p=>p.ts), ys=pts.map(p=>p.ctx||0);
-  const minx=Math.min(...xs), maxx=Math.max(...xs), maxy=Math.max(ZONE_TOK.good, ...ys);
+  const minx=Math.min(...xs), maxx=Math.max(...xs), peak=Math.max(ZONE_TOK.good, ...ys);
+  // Y-SCALE. Fitting the ceiling to the session's own peak (the `fit` mode) means the newest point is ALWAYS
+  // drawn at the top — context only grows, so a 45k session and a 240k session draw the same picture, and the
+  // zone bands land somewhere different every time. That hides exactly the pattern this chart exists to show.
+  // Default is therefore an ABSOLUTE ceiling snapped to a ladder: the bands hold still across sessions and
+  // across most of a session's life, and when the ceiling does step up it steps visibly rather than sliding.
+  // The lowest rung sits above ZONE_TOK.drift so the drift band is never off the plot.
+  const maxy=opts.fit?peak:(SPARK_RUNGS.find(r=>r>=peak)||Math.ceil(peak/1e6)*1e6);
   const X=t=>maxx>minx?((t-minx)/(maxx-minx))*w:0, Y=v=>h-(Math.min(v,maxy)/maxy)*(h-2)-1;
   const band=(lo,hi,col)=>{const y1=Y(hi),y2=Y(lo); return y2>y1?`<rect x="0" y="${y1.toFixed(1)}" width="${w}" height="${(y2-y1).toFixed(1)}" fill="${col}" opacity="0.12"/>`:'';};
   const bands=band(0,ZONE_TOK.drift,'var(--green)')+band(ZONE_TOK.drift,ZONE_TOK.danger,'var(--amber)')+band(ZONE_TOK.danger,maxy,'var(--red)');
@@ -2887,9 +2899,15 @@ const detail=document.getElementById('detail'), dtitle=document.getElementById('
       dstats=document.getElementById('dstats'), dstream=document.getElementById('dstream'),
       dlive=document.getElementById('dlive');
 let openSid=null, actTimer=null, histTimer=null, histPts=[], evData=null;
+// trajectory y-axis: false (default) = absolute ladder, comparable between sessions; true = fit to this
+// session's peak, more shape on a small session at the cost of comparability. Persists per device.
+let sparkFit=prefGet('spark.fit',false);
 const dreply=document.getElementById('dreply'), rtext=document.getElementById('rtext'),
       rsend=document.getElementById('rsend'), rmsg=document.getElementById('rmsg');
 document.getElementById('dback').onclick=closeDetail;
+// trajectory y-axis toggle (delegated: the checkbox is re-rendered on every stats tick, so it can't own a handler)
+document.addEventListener('change',e=>{ const cb=e.target.closest&&e.target.closest('[data-sparkfit]'); if(!cb)return;
+  sparkFit=!!cb.checked; prefSet('spark.fit',sparkFit); if(openSid)renderDetailStats(); });
 // manual refresh: pulls everything for the open session at once, so you never have to reload the page
 // (a reload is the thing that used to throw you back to the first scene).
 (()=>{const b=document.getElementById('drefresh'); if(!b)return;
@@ -2962,7 +2980,9 @@ function renderDetailStats(){
   dstats.innerHTML=`${feat.dumbzone?`<div class="zone z-${z.key}"><span class="zl">${z.emoji} ${z.label}</span><span class="za">${esc(z.advice)}</span></div>`:''}
     <div class="drow"><b style="color:${c}">${Math.round(pctc(s))}%</b> to auto-compact · ~${fmt(s.tokens_until_compact)} left · ${Math.round(s.pct)}% of ${fmt(s.window)}</div>
     ${s.eta_secs?`<div class="drow">⏱ <b>${dur(s.eta_secs)}</b> to compact · +${s.growth_tpm||0} tok/min</div>`:''}
-    ${feat.dumbzone&&histPts.length>1?`<div class="spark"><span class="sl">📈 context trajectory · ${histPts.length} pts</span>${svgSpark(histPts)}</div>`:''}
+    ${feat.dumbzone&&histPts.length>1?`<div class="spark"><span class="sl">📈 context trajectory · ${histPts.length} pts
+      <label class="sparkfit" title="Fit the y-axis to this session's own peak. Shows more shape on a small session, but the curve then always ends at the top — so heights are no longer comparable between sessions."><input type="checkbox" data-sparkfit${sparkFit?' checked':''}> fit</label>
+      </span>${svgSpark(histPts,{fit:sparkFit})}</div>`:''}
     ${evData&&evData.counts&&Object.keys(evData.counts).length?`<div class="evrow">${evChips(evData.counts)}</div>`:''}
     ${feat.mcptax?mcpChips(s.mcp_observed):''}
     ${feat.mcptax&&s.prefix_tokens?`<div class="foot" style="text-align:left;margin-top:2px">🧰 starts at ~${fmtTok(s.prefix_tokens)}/turn cached (tools + system + memory + MCP defs)</div>`:''}
