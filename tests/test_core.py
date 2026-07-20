@@ -33,6 +33,18 @@ import subprocess    # noqa: E402
 USAGE = {"input_tokens": 1, "cache_creation_input_tokens": 10, "cache_read_input_tokens": 85000, "output_tokens": 50}
 
 
+def _iso_ago(seconds=0):
+    """An ISO-8601 Z timestamp `seconds` in the past.
+
+    Any event fixture whose test then queries a ROLLING WINDOW (`days=30`, etc.) must be built relative to
+    now. A hardcoded date works until it drifts past the window, then the test starts failing on a date
+    unrelated to any code change — which is exactly what happened to the two tests below: they pinned
+    2026-06-06 against a `days=30` query and went red ~43 days later, with the code still correct.
+    Timestamps used only for parsing/ordering assertions don't need this and are left as-is.
+    """
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _write(lines):
     fd, p = tempfile.mkstemp(suffix=".jsonl")
     with os.fdopen(fd, "w") as f:
@@ -940,16 +952,18 @@ class StoreTests(unittest.TestCase):
         def line(uuid, sid, name, tid, when):
             return json.dumps({"uuid": uuid, "sessionId": sid, "timestamp": when,
                                "message": {"content": [{"type": "tool_use", "name": name, "id": tid, "input": {}}]}})
+        # within the days=30 window this test queries — see _iso_ago()
+        ta, tb, tc, td = _iso_ago(3600), _iso_ago(3540), _iso_ago(3480), _iso_ago(3420)
         # extract_events recognizes the mcp_call type with {server, tool}
-        evs = store.extract_events(json.loads(line("u1", "s1", "mcp__github__create_issue", "t1", "2026-06-06T07:00:00Z")))
+        evs = store.extract_events(json.loads(line("u1", "s1", "mcp__github__create_issue", "t1", ta)))
         self.assertEqual([e["type"] for e in evs], ["mcp_call"])
         self.assertEqual(json.loads(evs[0]["payload_json"]), {"server": "github", "tool": "create_issue"})
         # ingest a few (github x2, filesystem x1) on this host; a plain Read is NOT an mcp_call
         self.s.ingest_event_lines([
-            line("a", "s1", "mcp__github__create_issue", "t1", "2026-06-06T07:00:00Z"),
-            line("b", "s1", "mcp__github__list_prs", "t2", "2026-06-06T07:01:00Z"),
-            line("c", "s2", "mcp__filesystem__read_file", "t3", "2026-06-06T07:02:00Z"),
-            line("d", "s2", "Read", "t4", "2026-06-06T07:03:00Z"),
+            line("a", "s1", "mcp__github__create_issue", "t1", ta),
+            line("b", "s1", "mcp__github__list_prs", "t2", tb),
+            line("c", "s2", "mcp__filesystem__read_file", "t3", tc),
+            line("d", "s2", "Read", "t4", td),
         ], host="hostA")
         used = self.s.mcp_servers_used(days=30)["hostA"]
         self.assertEqual(set(used), {"github", "filesystem"})        # Read excluded
@@ -958,7 +972,14 @@ class StoreTests(unittest.TestCase):
         self.assertIsNotNone(used["github"]["last_ts"])
         # idempotent: re-ingesting the same line inserts nothing new
         self.assertEqual(self.s.ingest_event_lines([
-            line("a", "s1", "mcp__github__create_issue", "t1", "2026-06-06T07:00:00Z")], host="hostA"), 0)
+            line("a", "s1", "mcp__github__create_issue", "t1", ta)], host="hostA"), 0)
+        # the rolling window is a real filter, not an accident of the fixture dates: an event from 45 days
+        # ago is excluded at days=30 but present with no window. (Asserting this explicitly is what keeps a
+        # future fixture from drifting out of the window and failing for a reason unrelated to the code.)
+        self.s.ingest_event_lines([
+            line("old", "s3", "mcp__legacy__ping", "t9", _iso_ago(45 * 86400))], host="hostA")
+        self.assertNotIn("legacy", self.s.mcp_servers_used(days=30)["hostA"])
+        self.assertIn("legacy", self.s.mcp_servers_used(days=0)["hostA"])
 
     def test_prefix_overhead_first_turn_and_stats(self):
         # MCP tax Slice 3: context floor = first-turn cache_creation+cache_read (real billed), per session
@@ -995,9 +1016,10 @@ class StoreTests(unittest.TestCase):
             row("e", 300_000, 5.0, side=1),  # danger BUT sidechain → excluded
         ])
         # one manual + one auto compaction → only the auto count surfaces in the reducible card
-        self.s.ingest_event_lines([json.dumps({"uuid": "z1", "sessionId": "s", "timestamp": "2026-06-06T07:00:00Z",
+        # timestamps must sit inside the days=30 window queried below — see _iso_ago()
+        self.s.ingest_event_lines([json.dumps({"uuid": "z1", "sessionId": "s", "timestamp": _iso_ago(3600),
                                                "compactMetadata": {"trigger": "auto"}}),
-                                   json.dumps({"uuid": "z2", "sessionId": "s", "timestamp": "2026-06-06T07:01:00Z",
+                                   json.dumps({"uuid": "z2", "sessionId": "s", "timestamp": _iso_ago(3540),
                                                "compactMetadata": {"trigger": "manual"}})])
         rd = self.s.reducible_spend(days=30)
         self.assertTrue(rd["estimate"])                              # honesty flag present
