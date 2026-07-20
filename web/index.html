@@ -1412,26 +1412,59 @@ function searchHelpBody(){
       (<code>CC_EMBED_MODEL</code>); otherwise keyword search works with no setup. Still your own machine — zero egress.</li>
   </ol>`;
 }
+// Scene-level overview. Deliberately SHORT: each card has its own "?" carrying the detail, and duplicating
+// it here is how two explanations of one thing drift apart.
 function maintHelpBody(){
   return `
   <p class="intro">Tools for the app's local data store. All are <b>content-free</b> and read-only on your
-    transcripts — they only touch the app's own metrics database.</p>
+    transcripts — they only touch the app's own metrics database. Nothing here contacts a third party.</p>
   <ul class="intro" style="margin:4px 0 0;padding-left:18px">
-    <li><b>📦 Export (encrypted)</b> — writes one <b>AES-256-GCM-encrypted</b> file (from a <b>passphrase you
-      choose</b>) of the app's metrics/history, to back up or move to another machine, then <b>Import</b> it
-      there. <b>Protect the file and the passphrase</b> — the passphrase is never stored, so lose it and the
-      export is unrecoverable. It does <b>not</b> contain your raw chat transcripts (those are plain-text files
-      you back up separately — see 🔒 Privacy in the menu). A "plaintext (local only)" option exists for
-      same-machine use.</li>
-    <li><b>💾 Checkpoint WAL</b> — folds the write-ahead log back into the database. Lossless; just bounds the
-      <code>-wal</code> file size.</li>
-    <li><b>🧹 Prune</b> — removes old rate-limit rows (&gt;30 days) and orphaned content-index rows.
-      <b>Previews first</b>, then you confirm.</li>
-    <li><b>♻ Vacuum</b> — reclaims disk space the database holds but isn't using. May take a few seconds; best
-      run on the host.</li>
+    <li><b>💾 Storage</b> — how much space the metrics DB and the content index are using, and when you last
+      exported.</li>
+    <li><b>📦 Export / Import</b> — back up the app's history, or move it to another machine.</li>
+    <li><b>🧰 Maintenance</b> — Checkpoint, Prune and Vacuum: keep the database tidy and reclaim disk.</li>
   </ul>
-  <p class="foot" style="margin-top:8px">Storage sizes + last-export info are shown at the top of this scene.
+  <p class="foot" style="margin-top:8px">Each card has its own <b>?</b> with the details — including exactly
+    what every action touches and whether it can lose anything.
     More: <code>docs/DATA_EXPORT.md</code>, <code>docs/UPGRADE.md</code>.</p>`;
+}
+function maintIoHelpBody(){
+  return `
+  <p class="intro">Move or back up the app's <b>metrics history</b> — token counts, costs, events and
+    timestamps. <b>Never your chat transcripts.</b></p>
+  <h4 style="margin:12px 0 4px">🔐 Export (encrypted)</h4>
+  <p class="intro">Writes <b>one AES-256-GCM-encrypted file</b>, keyed from a <b>passphrase you choose</b>.
+    It's encrypted <i>before</i> it touches disk, so the plaintext never lands in the export directory.</p>
+  <p class="note">⚠️ The passphrase is <b>never stored</b>. Lose it and the export is unrecoverable — there
+    is no reset. Protect the file <i>and</i> the passphrase; together they're a full copy of your history.</p>
+  <p class="intro">A <b>plaintext (local only)</b> option exists for same-machine use, where you're moving a
+    file between directories and encryption would just be friction.</p>
+  <h4 style="margin:12px 0 4px">📥 Import</h4>
+  <p class="intro">Merges another machine's export into this one. It <b>previews first</b> so you see what
+    would land before committing, and it's <b>idempotent</b> — importing the same bundle twice doesn't
+    double-count anything. Use it to consolidate a fleet onto one dashboard, or to carry history across a
+    rebuild.</p>
+  <p class="foot" style="margin-top:8px">Your raw transcripts are plain-text files on disk and are
+    <b>not</b> included here — back those up separately. See <b>🔒 Privacy</b> in the menu, and
+    <code>docs/DATA_EXPORT.md</code>.</p>`;
+}
+function maintOpsHelpBody(){
+  return `
+  <p class="intro">Housekeeping for the app's SQLite database. Ordered below from <b>safest</b> to
+    <b>most invasive</b> — none of them touch your transcripts.</p>
+  <ul class="intro" style="margin:4px 0 0;padding-left:18px">
+    <li><b>💾 Checkpoint WAL</b> — folds the write-ahead log back into the main database file.
+      <b>Completely lossless</b>; it only bounds how large the <code>-wal</code> file grows. Safe to run any
+      time, as often as you like.</li>
+    <li><b>🧹 Prune</b> — deletes data that has aged out: rate-limit samples older than <b>30 days</b>, and
+      content-index rows orphaned by sessions that no longer exist. <b>Previews first</b> — you see the exact
+      counts and confirm before anything is removed. Your usage/cost history is <b>not</b> pruned.</li>
+    <li><b>♻ Vacuum / reclaim</b> — rebuilds the database to return space it's holding but no longer using
+      (typically after a Prune). No data is lost, but it <b>rewrites the whole file</b>, so it can take a few
+      seconds and is best run <b>on the host</b> rather than over a slow link.</li>
+  </ul>
+  <p class="foot" style="margin-top:8px">Rule of thumb: <b>Checkpoint</b> whenever · <b>Prune</b> when the DB
+    grows · <b>Vacuum</b> right after a Prune, to actually get the disk back.</p>`;
 }
 function costHelpBody(){
   return `
@@ -1464,6 +1497,10 @@ const SCENE_HELP={
   cost:   {title:'💰 Cost & Accounts — how to read it', body:costHelpBody},
   history:{title:'📈 History — how to read it',         body:historyHelpBody},
   maint:  {title:'🧹 Maintenance — what these do',      body:maintHelpBody},
+  // Card-level help. The scene-level `maint` entry above is deliberately a short OVERVIEW that points
+  // here — the per-function detail lives in exactly one place so the two can't drift apart.
+  maint_io:  {title:'📦 Export / Import — how it works', body:maintIoHelpBody},
+  maint_ops: {title:'🧰 Maintenance — what each action does', body:maintOpsHelpBody},
 };
 
 function render(list){
@@ -2285,14 +2322,14 @@ function renderSearch(){
   const sc=document.getElementById('scene-search'); if(!sc)return;
   const m=window._searchMeta;
   let h='<div class="schead"><h2>🔍 Search</h2><button class="helpq sm" data-schelp="search" title="What is Search? Why is it hidden? How do I use it?">?</button></div>';
-  if(!m){ sc.innerHTML=h+'<div class="empty">Loading…</div>'; return; }
+  if(!m){ sc.innerHTML=h+'<div class="empty">Loading…</div>'+searchAboutHTML(m); return; }
   if(!m.local){
     h+='<div class="lcard"><h3>🔒 Local-only</h3>'
       +'<p class="foot" style="text-align:left">This scene searches the <b>raw text</b> of your transcripts — your prose, '
       +'file paths, command output, possibly secrets. To keep that off the network, it’s served <b>only on the machine '
       +'that owns the transcripts</b>, never over the LAN or your phone.</p>'
       +`<p class="foot" style="text-align:left">Open <a class="ulink" href="http://localhost:${esc(String(m.content_port||8100))}">http://localhost:${esc(String(m.content_port||8100))}</a> in a browser <b>on that machine</b> to search.</p></div>`;
-    sc.innerHTML=h; return;
+    sc.innerHTML=h+searchAboutHTML(m); return;
   }
   if(!m.enabled){
     h+='<div class="lcard"><h3>Enable content search</h3>'
@@ -2305,7 +2342,7 @@ function renderSearch(){
       +'<li>Concerned? Turn on <b>secret redaction</b> / <b>conversation-only</b> below after enabling, and/or '
       +'<b>encrypt your disk</b> (see docs). One click removes it all (Delete index).</li></ul>'
       +'<button class="genbtn" data-search-enable>🔓 Enable content search</button></div>';
-    sc.innerHTML=h; return;
+    sc.innerHTML=h+searchAboutHTML(m); return;
   }
   // enabled → do-not-screenshot banner + mode toggle + search box + filters + live stats + results + delete
   const st=m.stats||{}, em=m.embed||{};
@@ -2320,7 +2357,7 @@ function renderSearch(){
     +'<div id="search-results"></div>'
     +'<p class="foot" style="text-align:left;margin-top:12px"><button class="linklike" data-search-delete>🗑 Delete index</button> — turns search off and wipes <code>cc-content.db</code>.</p></div>'
     +searchPrivacyHTML(m.config||{});
-  sc.innerHTML=h;
+  sc.innerHTML=h+searchAboutHTML(m);
   renderSearchResults();
 }
 function renderSearchResults(){
@@ -2367,6 +2404,52 @@ async function deleteSearch(){
   try{ await fetch('/search-delete',{method:'POST'}); }catch(_){}
   window._searchResults=null; searchQ=''; window._searchSig=null; await pollSearchMeta();
 }
+// Persistent "About Search" section, pinned to the BOTTOM of the scene in EVERY state (loading, remote,
+// not-enabled, enabled). It has to render in the not-enabled state especially — that's the state where the
+// user is asking "why is this switched off?", and a modal they have to go find doesn't answer it in place.
+function searchAboutHTML(m){
+  const port = esc(String((m && m.content_port) || 8100));
+  return '<div class="lcard sabout"><h3>❓ About Search — and why it\'s off by default</h3>'
+    +'<p class="intro">Search is the <b>one opt-in scene</b> in this app. Everything else here is '
+      +'<b>content-free</b> — token counts, costs, timestamps, event types, never what you actually said. '
+      +'Search is the exception: it indexes the <b>raw text</b> of your transcripts.</p>'
+    +'<h4 style="margin:12px 0 4px">Why it ships disabled</h4>'
+    +'<p class="intro">Turning it on is the only moment this app writes your conversation content to disk, so '
+      +'it\'s a decision you make deliberately rather than one you inherit from a default. Your transcripts '
+      +'contain your prose, file paths, tool output — and <b>whatever secrets happened to scroll past</b>, '
+      +'like a token echoed by a command. Indexing that creates a searchable copy, so it stays off until you '
+      +'say otherwise.</p>'
+    +'<p class="intro">For the same reason the index is <b>walled to the machine that owns the '
+      +'transcripts</b>. It is served on a loopback-only port and is <b>never</b> reachable over the LAN or '
+      +'from your phone, even with the PIN — unlike the rest of the dashboard. A scene you can read from the '
+      +'couch is a scene an intruder on your network can read too, and that trade is fine for token counts '
+      +'and wrong for raw content.</p>'
+    +'<h4 style="margin:12px 0 4px">How to turn it on</h4>'
+    +'<ol class="intro" style="margin:4px 0 0;padding-left:18px">'
+      +'<li>Open this scene <b>on the host itself</b>: <code>http://localhost:'+port+'</code>. The button '
+        +'below only appears there.</li>'
+      +'<li>Click <b>🔓 Enable content search</b>. Indexing runs in the background; the stats line climbs as '
+        +'it backfills.</li>'
+      +'<li>Optionally tighten it right away under <b>🔐 Privacy</b>: shorten <b>retention</b> (default 14 '
+        +'days), switch on <b>secret redaction</b>, or set scope to <b>conversation-only</b> — which excludes '
+        +'tool output, the single biggest source of accidental secrets.</li>'
+    +'</ol>'
+    +'<h4 style="margin:12px 0 4px">What you get</h4>'
+    +'<ul class="intro" style="margin:4px 0 0;padding-left:18px">'
+      +'<li><b>Recover work lost to a compaction</b> — the main reason this exists. Find what you were doing '
+        +'before the context got summarized away.</li>'
+      +'<li><b>Keyword search</b> across conversation and tool output, filterable by kind and time range.</li>'
+      +'<li><b>Semantic (meaning-based) search</b>, optional — set <code>CC_EMBED_MODEL</code> and '
+        +'<code>CC_OLLAMA_URL</code> to point at a <b>local Ollama</b>. Embeddings are computed on your own '
+        +'machine; no text is sent to any third party, which is the only reason this feature exists at all.</li>'
+      +'<li>Jump straight from a hit into that session\'s drill-in.</li>'
+    +'</ul>'
+    +'<p class="foot" style="margin-top:10px;text-align:left">Reversible in one click — <b>🗑 Delete index</b> '
+      +'turns Search off and wipes <code>cc-content.db</code>. Retention also purges on its own cycle. '
+      +'At-rest encryption is your host\'s job (FileVault / BitLocker / LUKS). '
+      +'Detail: <code>docs/CONTENT_PRIVACY.md</code>.</p></div>';
+}
+
 // V13 2B — content-index privacy controls (retention / redaction / scope). Raw-content scene → local + PIN-gated.
 function searchPrivacyHTML(cfg){
   cfg=cfg||{}; const rd=(cfg.retention_days==null)?14:cfg.retention_days;
@@ -2956,7 +3039,7 @@ function renderMaint(){
   h+='<div class="lcard"><h3>💾 Storage</h3>'+blk('Usage DB (content-free)',st.usage)+blk('Content index',st.content)
     +'<p class="foot" style="text-align:left;opacity:.6">Export dir: <code>'+esc(m.export_dir||'')+'</code> · runtime: '+esc(m.runtime||'')
     +(ver?' · JAID v'+esc(ver):'')+'</p></div>';
-  h+='<div class="lcard"><h3>📦 Export / Import</h3>'
+  h+='<div class="lcard"><h3>📦 Export / Import <button class="helpq sm" data-schelp="maint_io" title="How Export and Import work">?</button></h3>'
     +'<p class="foot" style="text-align:left">A portable, <b>content-free</b> copy of your history (cost, events, rate limits, settings). '
     +'<b>Encrypted before it’s written</b> — only ciphertext touches disk.</p>'
     +'<button class="genbtn" data-maint-export>🔐 Export (encrypted)</button> '
@@ -2965,7 +3048,7 @@ function renderMaint(){
     +'<p class="foot" style="text-align:left;margin-top:10px"><button class="genbtn" data-maint-import>📥 Import…</button> <span style="opacity:.6">merge another machine’s export (idempotent; previews first)</span></p>'
     +'<div id="maint-import-result"></div>'
     +'<p class="foot" style="text-align:left;color:var(--amber)">⚠ Encrypt before sharing/uploading. <b>Store the passphrase in 1Password</b> — lose it and the file is unrecoverable.</p></div>';
-  h+='<div class="lcard"><h3>🧰 Maintenance</h3>'
+  h+='<div class="lcard"><h3>🧰 Maintenance <button class="helpq sm" data-schelp="maint_ops" title="What each action does">?</button></h3>'
     +'<button class="genbtn" data-maint-checkpoint>💾 Checkpoint WAL</button> <span style="opacity:.6">lossless; bounds the -wal files</span>'
     +'<p class="foot" style="text-align:left;margin-top:10px"><button class="genbtn" data-maint-prune>🧹 Prune…</button> <span style="opacity:.6">preview, then confirm (rate limits &gt;30d, orphaned content)</span></p>'
     +'<div id="maint-prune-result"></div>'

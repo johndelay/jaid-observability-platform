@@ -1139,9 +1139,20 @@ check('scene "?" help: bodies cover their scene; Cost/History render the trigger
   if (!/hidden by default/i.test(s)) throw new Error('search help: "why hidden by default" missing');
   if (!/loopback|content firewall|Local-only/i.test(s)) throw new Error('search help: local-only/firewall missing');
   if (!/enable|☰ menu/i.test(s)) throw new Error('search help: "how to access / enable" missing');
+  // Maintenance help is SPLIT: the scene "?" is a short overview, and the per-function detail lives in the
+  // two card "?"s. Asserting the split (not just "the words appear somewhere") is what stops the detail
+  // being duplicated back into the overview later and the two copies drifting apart.
   const mz = ctx.maintHelpBody();
-  if (!/Export/.test(mz) || !/passphrase/i.test(mz)) throw new Error('maint help: export/passphrase missing');
-  if (!/Prune/i.test(mz) || !/Vacuum/i.test(mz)) throw new Error('maint help: prune/vacuum missing');
+  if (!/Export \/ Import/.test(mz) || !/Maintenance/.test(mz)) throw new Error('maint overview: should name each card');
+  if (/passphrase/i.test(mz)) throw new Error('maint overview: per-function detail (passphrase) belongs in the card help, not the overview');
+  const mio = ctx.maintIoHelpBody();
+  if (!/Export/.test(mio) || !/passphrase/i.test(mio)) throw new Error('maint_io help: export/passphrase missing');
+  if (!/Import/.test(mio) || !/idempotent/i.test(mio)) throw new Error('maint_io help: import/idempotent missing');
+  if (!/never stored|unrecoverable/i.test(mio)) throw new Error('maint_io help: must warn the passphrase is unrecoverable');
+  const mops = ctx.maintOpsHelpBody();
+  if (!/Checkpoint/i.test(mops)) throw new Error('maint_ops help: checkpoint missing');
+  if (!/Prune/i.test(mops) || !/Vacuum/i.test(mops)) throw new Error('maint_ops help: prune/vacuum missing');
+  if (!/lossless/i.test(mops)) throw new Error('maint_ops help: should say which actions are lossless');
   if (!/burn rate/i.test(ctx.costHelpBody())) throw new Error('cost help: burn rate missing');
   if (!/trend|baseline/i.test(ctx.historyHelpBody())) throw new Error('history help: trend/baseline missing');
   // Cost + History scenes render their "?" trigger (both render on every render())
@@ -1150,8 +1161,35 @@ check('scene "?" help: bodies cover their scene; Cost/History render the trigger
   if (!document.getElementById('scene-history').innerHTML.includes('data-schelp="history"')) throw new Error('History scene missing its "?" button');
   // openSceneHelp must be safe for every key in the stub
   if (typeof ctx.openSceneHelp !== 'function') throw new Error('openSceneHelp not defined');
-  ['search','cost','history','maint'].forEach(k => ctx.openSceneHelp(k));
+  ['search','cost','history','maint','maint_io','maint_ops'].forEach(k => ctx.openSceneHelp(k));
   ctx.closeSceneHelp();
+});
+
+// 9l-2) Search: the persistent "About Search" section renders in EVERY state — especially not-enabled,
+// which is the state where the user is asking "why is this off?" and a modal doesn't answer it in place.
+check('search scene: About-Search section renders in remote / not-enabled / enabled states', () => {
+  if (typeof ctx.searchAboutHTML !== 'function') throw new Error('searchAboutHTML() not defined');
+  const a = ctx.searchAboutHTML({content_port: 8100});
+  for (const [re, what] of [[/off by default|opt-in/i, 'the off-by-default framing'],
+                            [/secret/i, 'the secrets-in-transcripts risk'],
+                            [/loopback|localhost/i, 'the loopback-only wall'],
+                            [/retention|redaction|conversation-only/i, 'the privacy controls'],
+                            [/CC_EMBED_MODEL/, 'semantic-search config'],
+                            [/Ollama/, 'the local-Ollama requirement'],
+                            [/compaction/i, 'the recover-after-compaction payoff'],
+                            [/Delete index/i, 'how to reverse it']]) {
+    if (!re.test(a)) throw new Error(`About Search is missing ${what}`);
+  }
+  const states = {loading: null, remote: {local: false, content_port: 8100},
+                  disabled: {local: true, enabled: false},
+                  enabled: {local: true, enabled: true, stats: {}, embed: {}, config: {}}};
+  const missing = [];
+  for (const [name, meta] of Object.entries(states)) {
+    win._searchMeta = meta;
+    ctx.renderSearch();
+    if (!document.getElementById('scene-search').innerHTML.includes('sabout')) missing.push(name);
+  }
+  if (missing.length) throw new Error(`About Search missing in state(s): ${missing.join(', ')}`);
 });
 
 // 9m) 🧠 Coach scene (V8 Slice A): Claude Code handoff + content-free bundle + honesty framing + empty/null
