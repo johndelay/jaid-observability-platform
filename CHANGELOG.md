@@ -10,6 +10,55 @@ This is a curated, user-facing log — for the full commit history see the Git l
 
 _Nothing yet._
 
+## [0.15.0] — 2026-07-20
+
+A drill-in pass: the context-trajectory chart now shows values you can actually read and compare, the
+drill-in stops going stale while you watch it, and the dashboard can no longer claim to be a release it
+isn't.
+
+### Added
+- **Y-axis on the context-trajectory chart.** Ticks for the peak, the 200k danger and 120k drift
+  boundaries, and 0, with dashed gridlines at the boundaries. The chart previously showed the *shape* of a
+  session's context growth with no indication of the values, so you could see that it climbed but not where
+  it had climbed to. Boundaries above the plotted range are omitted rather than stacked on the top label.
+- **Manual refresh button in the drill-in** — pulls the trajectory, the event counts and the activity
+  stream at once, so you never need a page reload to get current numbers.
+- **Build stamp on `/health`** (`build`, `release`, `version_display`). `VERSION` is bumped per release, so
+  between releases a running instance reported a clean release number while actually serving post-tag code.
+  The stamp is `v<VERSION>` when built from exactly the tag on a clean tree, else a short commit sha
+  (+`-dirty`); the About scene shows `0.15.0+<sha>` and a *dev build* marker. An image built without a stamp
+  reports `release: null` ("build unknown") rather than claiming to be the release. `version` itself stays
+  bare semver, so the update check is unaffected. Use `scripts/rebuild.sh` to bake the stamp in.
+- **MCP scene: filter by reporting host** — chips to show one host's MCP usage or all, persisted per device.
+- **Cost scene: the ten priciest sessions**, with host, project, cost and token count.
+- **More in-app help** — "?" buttons on Maintenance and on Export/Import explaining each function, and a
+  standing section under Search explaining that transcript search is off by default, why, and how to enable it.
+
+### Changed
+- **The trajectory chart's y-axis is now absolute by default.** It used to fit the ceiling to the session's
+  own peak — and since context only grows during a session, that pinned the newest point to the top of the
+  box every time. A 45k session and a 240k session drew the same picture, and the zone bands landed
+  somewhere different in each. The ceiling now snaps to a coarse ladder (150k / 250k / 400k / 700k / 1M),
+  so the bands hold still across sessions and heights are comparable. A **fit** checkbox on the chart
+  restores the old per-session scaling for shape detail; the lowest rung sits above 120k so the drift band
+  is always on the plot.
+- The Coach scene's call-to-action and headline are visually promoted, using the brand accent rather than
+  the semantic state colours.
+- `docs/RELEASING.md` corrected — it referenced a sync script that no longer exists and omitted the
+  changelog-promotion and tagging steps. Now also documents that release tags land on the merge commit on
+  `main`, which is why the build stamp compares against the tag directly instead of using `git describe`.
+
+### Fixed
+- **The drill-in went stale while open.** Stats and activity refreshed every 2.5s, but the context
+  trajectory and behavioral-event counts were fetched once when the drill-in opened and never again — so
+  the graph froze for as long as you kept looking at it. Both now refresh every 30s.
+- **A page reload threw you back to the first scene.** The carousel now remembers the scene you were on
+  (by scene ID, so enabling or disabling a scene doesn't restore the wrong one).
+
+### Security
+- Removed a real hostname from two code comments. This repository is public; the value was an internal
+  host name with no business being in it.
+
 ## [0.14.0] — 2026-07-19
 
 Six weeks of work since 0.13.0: the JAID rebrand, two security-review batches, a scene consolidation,

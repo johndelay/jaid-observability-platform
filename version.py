@@ -7,7 +7,7 @@ the update-check's upgrade verb (docker compose pull vs pipx upgrade).
 """
 import os
 
-VERSION = "0.14.0"
+VERSION = "0.15.0"
 
 # Build stamp: "v<VERSION>" when the image was built from exactly the tagged release on a clean tree, else a
 # short commit sha (+"-dirty"). Baked in as CC_BUILD at container-build time by scripts/rebuild.sh. Exists because
