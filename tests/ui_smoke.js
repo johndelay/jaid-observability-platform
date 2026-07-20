@@ -1582,6 +1582,20 @@ check('setColor ignores a color outside the allowlist', () => {
   });
 });
 
+// 21) launch-a-session modal: the in-app answer to "how do I start a session I can write back to?"
+check('launchModalBody covers tmux, host wiring, the PIN, and the read-only caveat', () => {
+  if (typeof ctx.launchModalBody !== 'function') throw new Error('launchModalBody() not defined');
+  const b = ctx.launchModalBody();
+  for (const [re, what] of [[/tmux new/, 'the tmux launch command'], [/jaid-setup/, 'the host-wiring step'],
+                            [/CC_ACCESS_PIN/, 'the PIN requirement'], [/responder/i, 'the responder requirement'],
+                            [/read-only/i, 'the no-tmux read-only caveat'], [/jq/, 'the jq dependency']]) {
+    if (!re.test(b)) throw new Error(`launch modal is missing ${what}`);
+  }
+  // the caveat must be stated as unfixable-after-launch, which is the whole reason this is in the app
+  if (!/already running|at launch time/i.test(b)) throw new Error('launch modal should say tmux cannot be added to a running session');
+  if (!/data-copy="tmux new[^"]*"/.test(b)) throw new Error('the tmux command should be copy-able');
+});
+
 // ---- report ----
 let failed = 0;
 for (const [ok, name] of results) { console.log((ok ? '  PASS ' : '  FAIL ') + name); if (!ok) failed++; }

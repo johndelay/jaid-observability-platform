@@ -696,6 +696,7 @@
     <div id="menuacct"></div>
 
     <div class="msect">Help &amp; support</div>
+    <div class="mrow" data-launch-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">🚀 Launch a session <span class="muted" style="font-weight:400">· wire one up so you can answer &amp; recolor it</span></span><span class="tag">open</span></div>
     <div class="mrow" data-help-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">❓ Help &amp; troubleshooting</span><span class="tag">open</span></div>
     <div class="mrow" data-coach-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">🧠 JAID Coach <span class="muted" style="font-weight:400">· coach me on my Claude Code usage</span></span><span class="tag">open</span></div>
     <div class="mrow" data-privacy-open role="button" tabindex="0" style="cursor:pointer"><span class="ml">🔒 Privacy &amp; your data <span class="muted" style="font-weight:400">· what stays on your machine</span></span><span class="tag">open</span></div>
@@ -747,6 +748,12 @@
   <div class="modalpanel">
     <div class="modalhead"><h3>🔒 Privacy &amp; your data</h3><button id="privacymodalclose" class="modalclose">✕</button></div>
     <div id="privacymodalbody"></div>
+  </div>
+</div>
+<div id="launchmodal" class="modal" hidden>
+  <div class="modalpanel">
+    <div class="modalhead"><h3>🚀 Launch a session</h3><button id="launchmodalclose" class="modalclose">✕</button></div>
+    <div id="launchmodalbody"></div>
   </div>
 </div>
 <div id="schelp" class="modal" hidden>
@@ -1045,6 +1052,40 @@ function flash(){document.body.classList.add('alarm');setTimeout(()=>document.bo
 
 // public project repo (used by the ❓ Help modal; opening a link is ordinary browsing — sends no data)
 const REPO_URL='https://github.com/johndelay/jaid-observability-platform';
+
+// ---- 🚀 Launch a session modal (hamburger menu) — how to start a session that's fully wired ----
+// The dashboard is read-only for a session that wasn't launched in tmux, and that CANNOT be fixed after the
+// fact — so this is the one piece of setup worth surfacing in the app itself, not just the README.
+function launchModalBody(){
+  const cmd='tmux new -s work -c ~/your/project claude';
+  return ''
+    +`<p>Any Claude Code session on a host running the watcher shows up here <b>on its own</b> — no flags needed. `
+      +`These steps unlock the rest: live state, exact cost, and answering or recoloring a session from here.</p>`
+    +`<h4>1 · Launch inside tmux</h4>`
+    +`<p>The one that must happen <b>at launch time</b>:</p>`
+    +`<code class="hcmd" data-copy="${esc(cmd)}">${esc(cmd)}<span class="cp">⧉ copy</span></code>`
+    +`<p>Already in tmux? Just run <code>claude</code> as usual. The state hook records `
+      +`<code>session_id → $TMUX_PANE</code> on every event, and that pane is where this dashboard injects `
+      +`replies and <code>/color</code>.</p>`
+    +`<p class="note">⚠️ You can’t add this to a session that’s already running. One started outside tmux stays `
+      +`<b>read-only</b> for its whole life — it still appears here with full metrics, but the drill-in’s `
+      +`🎨 color picker will say <i>“dashboard only”</i> and there’s no reply box.</p>`
+    +`<h4>2 · Wire the host once</h4>`
+    +`<p>Two entries in <code>~/.claude/settings.json</code>: the <b>statusline</b> (authoritative window size, `
+      +`exact cost, rate limits, account) and the <b>state hooks</b> on all 7 events (precise “needs you”, `
+      +`compaction/skill/subagent events, and the tmux pane above). Needs <code>jq</code> on <code>PATH</code>. `
+      +`Let Claude wire it:</p>`
+    +`<code class="hcmd" data-copy="/jaid-setup">/jaid-setup<span class="cp">⧉ copy</span></code>`
+    +`<p class="foot" style="text-align:left;margin:2px 0 0">Takes effect on the <b>next</b> session — `
+      +`<code>settings.json</code> is read at launch, so restart Claude Code after wiring.</p>`
+    +`<h4>3 · To write back to a session</h4>`
+    +`<p>Answering from your phone and setting a session’s color both inject into your shell, so they also need `
+      +`a <code>CC_ACCESS_PIN</code> on the server (the write path hard-refuses without one) and the `
+      +`<b>responder</b> running on that host — <code>./deploy-responder.sh</code>. The responder runs natively `
+      +`because the container can’t reach host tmux.</p>`
+    +`<div class="hlinks"><a class="hbtn" href="${esc(REPO_URL+'#launch-a-session-thats-fully-wired')}" `
+      +`target="_blank" rel="noopener noreferrer">📚 Full setup docs ↗</a></div>`;
+}
 
 // ---- ❓ Help & troubleshooting modal (opened from the hamburger menu) ----
 // Short "I'm stuck" entry point — points at your own Claude + the GitHub repo. The full metric
@@ -3067,6 +3108,7 @@ const carousel=document.getElementById('carousel'), track=document.getElementByI
       helpmodal=document.getElementById('helpmodal'),
       coachmodal=document.getElementById('coachmodal'),
       privacymodal=document.getElementById('privacymodal'),
+      launchmodal=document.getElementById('launchmodal'),
       schelp=document.getElementById('schelp'),
       ctxhelp=document.getElementById('ctxhelp'),
       daypop=document.getElementById('daypop'),
@@ -3205,6 +3247,16 @@ function openPrivacyModal(){ const b=document.getElementById('privacymodalbody')
 function closePrivacyModal(){ if(privacymodal)privacymodal.hidden=true; }
 elClick('privacymodalclose',closePrivacyModal);
 if(privacymodal)privacymodal.addEventListener('click',e=>{ if(e.target===privacymodal)closePrivacyModal(); });
+// 🚀 Launch a session modal — static body; copy buttons for the tmux launch command + /jaid-setup
+function openLaunchModal(){ const b=document.getElementById('launchmodalbody'); if(b)b.innerHTML=launchModalBody(); if(launchmodal)launchmodal.hidden=false; }
+function closeLaunchModal(){ if(launchmodal)launchmodal.hidden=true; }
+elClick('launchmodalclose',closeLaunchModal);
+if(launchmodal)launchmodal.addEventListener('click',e=>{
+  if(e.target===launchmodal){ closeLaunchModal(); return; }          // backdrop click closes
+  const cp=e.target.closest('[data-copy]'); if(!cp)return;           // copy the tmux command or /jaid-setup
+  copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
+    if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
+});
 // reusable per-scene "?" help modal — any [data-schelp="<key>"] button opens SCENE_HELP[key]
 function openSceneHelp(key){ const h=SCENE_HELP[key]; if(!h)return; const t=document.getElementById('schelptitle'); if(t)t.textContent=h.title; const b=document.getElementById('schelpbody'); if(b)b.innerHTML=h.body(); if(schelp)schelp.hidden=false; }
 function closeSceneHelp(){ if(schelp)schelp.hidden=true; }
@@ -3233,6 +3285,7 @@ if(menu)menu.addEventListener('click',e=>{
   if(e.target.closest&&e.target.closest('[data-help-open]')){ closeMenu(); openHelpModal(); return; }
   if(e.target.closest&&e.target.closest('[data-coach-open]')){ closeMenu(); openCoachModal(); return; }
   if(e.target.closest&&e.target.closest('[data-privacy-open]')){ closeMenu(); openPrivacyModal(); return; }
+  if(e.target.closest&&e.target.closest('[data-launch-open]')){ closeMenu(); openLaunchModal(); return; }
   if(e.target===menu)closeMenu();
 });
 if(menuscenes)menuscenes.addEventListener('click',e=>{
@@ -3259,8 +3312,8 @@ if(carousel){
 // --- keyboard (← → between scenes; ESC closes menu/detail) — window events guarded for the smoke sandbox ---
 if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('keydown',e=>{
-    if(e.key==='Escape'){ if(schelp&&!schelp.hidden){closeSceneHelp();return;} if(privacymodal&&!privacymodal.hidden){closePrivacyModal();return;} if(coachmodal&&!coachmodal.hidden){closeCoachModal();return;} if(helpmodal&&!helpmodal.hidden){closeHelpModal();return;} if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
-    if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(helpmodal&&!helpmodal.hidden)||(coachmodal&&!coachmodal.hidden)||(privacymodal&&!privacymodal.hidden)||(schelp&&!schelp.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
+    if(e.key==='Escape'){ if(schelp&&!schelp.hidden){closeSceneHelp();return;} if(privacymodal&&!privacymodal.hidden){closePrivacyModal();return;} if(launchmodal&&!launchmodal.hidden){closeLaunchModal();return;} if(coachmodal&&!coachmodal.hidden){closeCoachModal();return;} if(helpmodal&&!helpmodal.hidden){closeHelpModal();return;} if(termsmodal&&!termsmodal.hidden){closeTermsModal();return;} if(daypop&&!daypop.hidden){closeDayPop();return;} if(convo&&!convo.hidden){closeConvo();return;} if(ctxhelp&&!ctxhelp.hidden){closeCtxHelp();return;} if(mcphelp&&!mcphelp.hidden){closeMcpHelp();return;} if(menu&&!menu.hidden){closeMenu();return;} if(detail&&!detail.hidden){closeDetail();return;} }
+    if((detail&&!detail.hidden)||(menu&&!menu.hidden)||(mcphelp&&!mcphelp.hidden)||(helpmodal&&!helpmodal.hidden)||(coachmodal&&!coachmodal.hidden)||(privacymodal&&!privacymodal.hidden)||(launchmodal&&!launchmodal.hidden)||(schelp&&!schelp.hidden)||(convo&&!convo.hidden)||(termsmodal&&!termsmodal.hidden))return;
     if(e.key==='ArrowRight')goScene(sceneIdx+1);
     else if(e.key==='ArrowLeft')goScene(sceneIdx-1);
   });

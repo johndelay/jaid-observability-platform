@@ -493,6 +493,29 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     await page.waitForFunction(() => { const p = document.getElementById('privacymodal'); return p && p.hidden; }, undefined, { timeout: 3000 });
   });
 
+  await check('menu → Launch a session opens the launch modal (tmux command + wiring); Esc closes it', async () => {
+    await page.click('#menubtn');
+    await page.waitForFunction(() => { const m = document.getElementById('menu'); return m && m.hidden === false; }, undefined, { timeout: 3000 });
+    await page.$eval('[data-launch-open]', el => el.click());
+    await page.waitForFunction(() => {
+      const p = document.getElementById('launchmodal'), m = document.getElementById('menu');
+      return p && !p.hidden && m && m.hidden;
+    }, undefined, { timeout: 3000 });
+    const ok = await page.evaluate(() => {
+      const b = document.getElementById('launchmodalbody').innerHTML;
+      return /tmux new/.test(b) && /jaid-setup/.test(b) && /CC_ACCESS_PIN/.test(b) && /read-only/i.test(b);
+    });
+    if (!ok) throw new Error('launch modal must cover the tmux launch command, host wiring, the PIN, and the read-only caveat');
+    // the tmux command must be copyable, not just readable
+    const copyable = await page.evaluate(() => {
+      const el = document.querySelector('#launchmodalbody [data-copy]');
+      return !!el && /tmux new/.test(el.getAttribute('data-copy'));
+    });
+    if (!copyable) throw new Error('the tmux launch command should be a copy-able hcmd block');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => { const p = document.getElementById('launchmodal'); return p && p.hidden; }, undefined, { timeout: 3000 });
+  });
+
   await check('scene "?" help: Cost scene "?" opens the scene-help modal; Esc closes it', async () => {
     await page.waitForSelector('[data-schelp="cost"]', { timeout: 5000 });   // Cost scene renders on every tick
     await page.$eval('[data-schelp="cost"]', el => el.click());              // $eval clicks regardless of scene visibility
