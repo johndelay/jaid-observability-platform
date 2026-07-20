@@ -55,5 +55,11 @@ servers).
   won't see it. Rebuild with `docker compose up -d --build --force-recreate` and confirm the change is baked in.
 - **Naming:** the product is "JAID Observability Platform"; the package / CLI / container / cache-path names
   are intentionally `cc-observability` and the wire-protocol env vars are `CC_*` — don't "fix" those.
+- **Never use the semantic state colours decoratively.** `--red` / `--amber` / `--orange` / `--yellow` /
+  `--green` encode *state* everywhere in the UI (compaction proximity, dumb-zone bands, alerts). Reusing one
+  to make something look nice makes it read as an alarm. For emphasis use the brand tokens — `--primary`,
+  `--secondary`, `--accent` — and the existing idioms: the accent ring
+  (`box-shadow:0 0 0 1px var(--accent), …`) for a highlighted card, and the `linear-gradient(90deg,
+  var(--primary), var(--accent))` text treatment for a hero heading.
 - **Secrets:** never write secrets into the repo or tracked files. The only credential is `CC_ACCESS_PIN`,
   which lives in `.env` (gitignored).
