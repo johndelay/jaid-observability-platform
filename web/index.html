@@ -3162,7 +3162,11 @@ function renderAbout(){
   let h='<h2>ℹ️ About</h2>';
   if(!a){ sc.innerHTML=h+'<div class="empty">Loading…</div>'; return; }
   h+='<div class="lcard"><p class="foot" style="text-align:left">JAID Observability Platform — a phone-glanceable Claude Code observability &amp; triage dashboard. Self-hosted, content-free, no third-party data egress.</p>'
-    +'<p class="foot" style="text-align:left"><b>Version '+esc(a.version||'')+'</b> · runtime: '+esc(a.runtime||'')+'</p></div>';
+    +'<p class="foot" style="text-align:left"><b>Version '+esc(a.version_display||a.version||'')+'</b> · runtime: '+esc(a.runtime||'')
+    // release===false means we KNOW this is post-tag code; null means no build stamp, so say so rather than
+    // implying a clean release. Muted, not an alert colour — a dev build is normal, it just shouldn't be silent.
+    +(a.release===false?' · <span class="muted">dev build</span>':a.release==null?' · <span class="muted">build unknown</span>':'')
+    +'</p></div>';
   h+='<div class="lcard"><h3>⚖️ Disclaimer</h3>'
     +'<p class="foot" style="text-align:left">Independent project — not affiliated with or endorsed by Anthropic, Google, or any AI vendor whose products it integrates. Product names &amp; trademarks (e.g. \'Claude\', \'Antigravity\') belong to their respective owners.</p></div>';
   h+='<div class="lcard"><h3>📄 License</h3>'
