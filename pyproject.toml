@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cc-observability"
-version = "0.13.0"          # keep in sync with version.py VERSION
+version = "0.14.0"          # keep in sync with version.py VERSION
 description = "Phone-glanceable Claude Code observability/triage dashboard — self-hosted, content-free, no third-party egress."
 readme = "README.md"
 requires-python = ">=3.10"

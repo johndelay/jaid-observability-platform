@@ -8,6 +8,13 @@ This is a curated, user-facing log — for the full commit history see the Git l
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.14.0] — 2026-07-19
+
+Six weeks of work since 0.13.0: the JAID rebrand, two security-review batches, a scene consolidation,
+macOS watcher support, and the session color picker.
+
 ### Added
 - **Set a session's identity color from the dashboard.** The drill-in now has a swatch row with Claude
   Code's eight `/color` names plus a ⟲ reset. Picking one does two things: it persists the color (so the
@@ -17,8 +24,47 @@ This is a curated, user-facing log — for the full commit history see the Git l
   deliberately *chosen* rather than assigned by a hash. Sessions without a tmux target still get the badge
   color; the picker says so rather than failing silently. The color is stored in `session_prefs.color`
   (schema migration 003) and `/pref` allowlists it to the eight known names.
+- **Launch-a-session instructions**, in the README and as a 🚀 modal in the hamburger menu — how to start a
+  session the dashboard can write back to. Leads with the tmux requirement, because it's the only piece
+  that can't be added to an already-running session.
+- **macOS watcher support** — an agent-followable install guide (`docs/WATCHER_MACOS.md`) and a
+  `jaid-watcher-macos` skill for adding a Mac (including Claude Desktop agent-mode sessions) to the fleet.
+- **Privacy modal** in the menu — the no-egress posture and what's stored in plaintext, in the app.
+- **❓ Help & troubleshooting modal** — a copy-able prompt that points your own Claude at the container
+  logs and repo, plus links to the docs and issues.
+- **🧠 JAID Coach modal** explaining the `/jaid-coach` skill.
+- **Per-scene "?" help** on Search, Cost, History and Maintenance.
+- **Model right-sizing** — all current Claude models priced (Fable 5, Mythos 5, …) with family-fallback
+  matching, plus a deterministic recommendation card and a per-project / per-session breakdown of the
+  downgrade opportunity.
+- **MCP scene: turn-off candidates** — servers never called or stale, with last-used times and a
+  `/context` helper button.
+- **Trophy scene**: clickable day squares and hour-slot squares open a stats popup.
+- **Dumb-zone threshold tick marks** on session fill bars, with hover tooltips, plus a cited Advisory
+  explaining the heuristic (and noting it isn't Anthropic-acknowledged).
+- **Opt-in self-update check** — `CC_UPDATE_URL` wired through Compose and documented. Outbound GET only;
+  it never auto-applies anything.
+
+### Security
+- **Security review batch 1** — fixed an attribute-context XSS, added login throttling, confined import
+  paths, added security headers, and a port guard preventing the LAN port from colliding with the
+  loopback content port.
+- **Security review batch 2** — the control plane (`/outbox`, `/outbox/result`) now fails closed behind a
+  token gate, the auth cookie rotates, and the content database is written `0600`.
+- **Cross-platform file-permission hardening** for sensitive data at rest.
 
 ### Changed
+- **Rebranded to "JAID Observability Platform"** across the UI header, PWA manifest and skills — the PWA
+  no longer names itself "Claude Code", and the skills are now `/jaid-coach` and `/jaid-setup`. Package,
+  container and wire-protocol names remain `cc-observability` / `CC_*` by design.
+- **Scenes consolidated 14 → 9** (Reports, a Coach hub, Archive as a filter, merged About/Help, grouped
+  menu), and the carousel reordered so Fleet is last and Search second-from-last.
+- **"Needs you" now means genuinely blocked** — a permission prompt or a question, enforced server-side,
+  rather than every finished turn. Only waiting sessions that actually have a last message get promoted
+  to the hero slot.
+- **The dumb zone renders as a yellow→orange→red range** rather than a single note, and the 🧠 pip hover
+  names the current band.
+- **Suggestions card** floats in a bottom dock so the list scrolls behind it.
 - **The session % gauge now shows distance-to-auto-compaction, not raw context-window fill.** It used to
   read `tokens / full window` (e.g. 93%), which trailed Claude Code's own "100% context used" indicator —
   because Claude Code compacts at the window *minus* a reserved output/compaction buffer, not at the hard
@@ -34,6 +80,15 @@ This is a curated, user-facing log — for the full commit history see the Git l
   same as the "Read →" link.
 - **Nav bar:** the scene-name label is now a fixed width, so the ► / ◄ buttons no longer shift sideways
   when you move between scenes (the button stays put under your cursor).
+- **Hamburger menu** section titles restyled (neon-green pills, sized down after an initial pass).
+
+### Fixed
+- **Statusline-only hosts no longer wipe transcript-derived state.** A host running the statusline but not
+  the watcher's full parse could blank a session's state on ingest.
+- **The Suggestions opt-in checkbox couldn't be checked**; the article list also pointed at the wrong repo.
+- **Two tests pinned fixture dates against a rolling 30-day window** and went red six weeks later with the
+  code still correct. Fixtures feeding a windowed query are now relative to now, and the window filter is
+  asserted directly instead of exercised by accident.
 
 ### Documentation
 - **`.env.sample`** now documents the optional settings the app already supported but the sample omitted:
@@ -42,6 +97,12 @@ This is a curated, user-facing log — for the full commit history see the Git l
   note now explains it can be any long random string (you never type it — it's used programmatically).
 - **README:** the Docker quick-start now reminds you to `mkdir -p ~/.cache/cc-dashboard` before the first
   run, and notes that an empty dashboard on first load is expected until Claude Code has run on the host.
+- **Install checklist + components reference** (`TEMPLATE_INSTALL_CHECKLIST.md`, `docs/COMPONENTS.md`),
+  documenting the statusline and filling gaps in the setup docs.
+- **`AGENTS.md` guardrails** — an AI agent working in this repo must ask before changing anything outside
+  the checkout (packages, services, dotfiles, `sudo`), and be explicit about what it did.
+- **Egress and network claims precised** across the docs to match reality (the only outbound calls are
+  opt-in GitHub fetches).
 
 ## [0.13.0] — 2026-06-07
 
