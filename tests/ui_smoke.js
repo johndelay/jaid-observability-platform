@@ -1139,9 +1139,20 @@ check('scene "?" help: bodies cover their scene; Cost/History render the trigger
   if (!/hidden by default/i.test(s)) throw new Error('search help: "why hidden by default" missing');
   if (!/loopback|content firewall|Local-only/i.test(s)) throw new Error('search help: local-only/firewall missing');
   if (!/enable|☰ menu/i.test(s)) throw new Error('search help: "how to access / enable" missing');
+  // Maintenance help is SPLIT: the scene "?" is a short overview, and the per-function detail lives in the
+  // two card "?"s. Asserting the split (not just "the words appear somewhere") is what stops the detail
+  // being duplicated back into the overview later and the two copies drifting apart.
   const mz = ctx.maintHelpBody();
-  if (!/Export/.test(mz) || !/passphrase/i.test(mz)) throw new Error('maint help: export/passphrase missing');
-  if (!/Prune/i.test(mz) || !/Vacuum/i.test(mz)) throw new Error('maint help: prune/vacuum missing');
+  if (!/Export \/ Import/.test(mz) || !/Maintenance/.test(mz)) throw new Error('maint overview: should name each card');
+  if (/passphrase/i.test(mz)) throw new Error('maint overview: per-function detail (passphrase) belongs in the card help, not the overview');
+  const mio = ctx.maintIoHelpBody();
+  if (!/Export/.test(mio) || !/passphrase/i.test(mio)) throw new Error('maint_io help: export/passphrase missing');
+  if (!/Import/.test(mio) || !/idempotent/i.test(mio)) throw new Error('maint_io help: import/idempotent missing');
+  if (!/never stored|unrecoverable/i.test(mio)) throw new Error('maint_io help: must warn the passphrase is unrecoverable');
+  const mops = ctx.maintOpsHelpBody();
+  if (!/Checkpoint/i.test(mops)) throw new Error('maint_ops help: checkpoint missing');
+  if (!/Prune/i.test(mops) || !/Vacuum/i.test(mops)) throw new Error('maint_ops help: prune/vacuum missing');
+  if (!/lossless/i.test(mops)) throw new Error('maint_ops help: should say which actions are lossless');
   if (!/burn rate/i.test(ctx.costHelpBody())) throw new Error('cost help: burn rate missing');
   if (!/trend|baseline/i.test(ctx.historyHelpBody())) throw new Error('history help: trend/baseline missing');
   // Cost + History scenes render their "?" trigger (both render on every render())
@@ -1150,8 +1161,35 @@ check('scene "?" help: bodies cover their scene; Cost/History render the trigger
   if (!document.getElementById('scene-history').innerHTML.includes('data-schelp="history"')) throw new Error('History scene missing its "?" button');
   // openSceneHelp must be safe for every key in the stub
   if (typeof ctx.openSceneHelp !== 'function') throw new Error('openSceneHelp not defined');
-  ['search','cost','history','maint'].forEach(k => ctx.openSceneHelp(k));
+  ['search','cost','history','maint','maint_io','maint_ops'].forEach(k => ctx.openSceneHelp(k));
   ctx.closeSceneHelp();
+});
+
+// 9l-2) Search: the persistent "About Search" section renders in EVERY state — especially not-enabled,
+// which is the state where the user is asking "why is this off?" and a modal doesn't answer it in place.
+check('search scene: About-Search section renders in remote / not-enabled / enabled states', () => {
+  if (typeof ctx.searchAboutHTML !== 'function') throw new Error('searchAboutHTML() not defined');
+  const a = ctx.searchAboutHTML({content_port: 8100});
+  for (const [re, what] of [[/off by default|opt-in/i, 'the off-by-default framing'],
+                            [/secret/i, 'the secrets-in-transcripts risk'],
+                            [/loopback|localhost/i, 'the loopback-only wall'],
+                            [/retention|redaction|conversation-only/i, 'the privacy controls'],
+                            [/CC_EMBED_MODEL/, 'semantic-search config'],
+                            [/Ollama/, 'the local-Ollama requirement'],
+                            [/compaction/i, 'the recover-after-compaction payoff'],
+                            [/Delete index/i, 'how to reverse it']]) {
+    if (!re.test(a)) throw new Error(`About Search is missing ${what}`);
+  }
+  const states = {loading: null, remote: {local: false, content_port: 8100},
+                  disabled: {local: true, enabled: false},
+                  enabled: {local: true, enabled: true, stats: {}, embed: {}, config: {}}};
+  const missing = [];
+  for (const [name, meta] of Object.entries(states)) {
+    win._searchMeta = meta;
+    ctx.renderSearch();
+    if (!document.getElementById('scene-search').innerHTML.includes('sabout')) missing.push(name);
+  }
+  if (missing.length) throw new Error(`About Search missing in state(s): ${missing.join(', ')}`);
 });
 
 // 9m) 🧠 Coach scene (V8 Slice A): Claude Code handoff + content-free bundle + honesty framing + empty/null
@@ -1594,6 +1632,65 @@ check('launchModalBody covers tmux, host wiring, the PIN, and the read-only cave
   // the caveat must be stated as unfixable-after-launch, which is the whole reason this is in the app
   if (!/already running|at launch time/i.test(b)) throw new Error('launch modal should say tmux cannot be added to a running session');
   if (!/data-copy="tmux new[^"]*"/.test(b)) throw new Error('the tmux command should be copy-able');
+});
+
+// 22) MCP host filter: chips render for >1 host, hidden for 1, and selecting a host narrows the cards.
+check('renderMcp: host filter chips narrow to one host, hidden when only one reports', () => {
+  const host = (n, dead) => ({host: n, configured: 3, used: 3 - dead, dead, window_days: 30,
+                              servers: [{name: 'srv-' + n, status: 'ok', calls: 1, used: true, tier: 'active'}]});
+  win._mcp = {enabled: true, window_days: 30, hosts: [host('alpha', 1), host('beta', 0)]};
+  ctx.renderMcp();
+  let h = document.getElementById('scene-mcp').innerHTML;
+  if ((h.match(/data-mcphost="/g) || []).length !== 3) throw new Error('expected All + 2 host chips');
+  if (!/srv-alpha/.test(h) || !/srv-beta/.test(h)) throw new Error('unfiltered view should show both hosts');
+  // one host → nothing worth filtering, chips suppressed
+  win._mcp = {enabled: true, window_days: 30, hosts: [host('alpha', 1)]};
+  ctx.renderMcp();
+  if (/data-mcphost="/.test(document.getElementById('scene-mcp').innerHTML)) {
+    throw new Error('filter chips should be hidden with a single reporting host');
+  }
+});
+
+// 23) Cost: most-expensive-sessions table — ranked rows, masked identifiers, honest about sidechains.
+check('renderCost: top-sessions table renders ranked rows and masks identifiers', () => {
+  win._cost = {enabled: true, daily: [], projects: [], by_account: [], rate_eta: {}, overage: {},
+               top_sessions: [
+                 {session_id: 's-rich', host: 'boxA', project: '/srv/secret-proj', cost_usd: 9.5,
+                  tokens: 1515, messages: 2, account: 'a@x.com'},
+                 {session_id: 's-mid', host: 'boxB', project: '/srv/other', cost_usd: 3,
+                  tokens: 12, messages: 1, account: 'a@x.com'}]};
+  ctx.render(STATE);
+  const h = document.getElementById('scene-cost').innerHTML;
+  if (!/Most expensive sessions/i.test(h)) throw new Error('top-sessions card missing');
+  if ((h.match(/data-cost-sid="/g) || []).length !== 2) throw new Error('expected 2 ranked rows');
+  if (h.indexOf('s-rich') > h.indexOf('s-mid')) throw new Error('rows should be cost-descending');
+  // must NOT open the search scene's raw-conversation viewer
+  if (/data-open-sid=/.test(h)) throw new Error('cost rows must not reuse the raw-conversation data-open-sid');
+  // identifiers are masked unless reveal is on (screenshot safety)
+  if (/secret-proj/.test(h)) throw new Error('raw project path leaked — must go through projDisplay()');
+  if (/boxA/.test(h)) throw new Error('raw host leaked — must go through hostDisplay()');
+  // empty payload renders nothing rather than an empty shell
+  win._cost = {enabled: true, daily: [], projects: [], by_account: [], rate_eta: {}, overage: {}, top_sessions: []};
+  ctx.render(STATE);
+  if (/Most expensive sessions/i.test(document.getElementById('scene-cost').innerHTML)) {
+    throw new Error('with no data the card should not render at all');
+  }
+});
+
+// 24) Coach: the primary CTA is visually promoted and does NOT borrow the semantic state colors.
+check('renderCoach: CTA card + hero headline use brand tokens, not state colors', () => {
+  win._coach = {enabled: true, handoff: {cmd: '/jaid-coach'}, bundle: {}, recent_sessions: []};
+  ctx.renderCoach();
+  const h = document.getElementById('scene-coach').innerHTML;
+  if (!/cta-card/.test(h)) throw new Error('CTA card should carry the highlighted-card class');
+  if (!/cta-cmd/.test(h)) throw new Error('the command chip should carry the promoted class');
+  if (!/h2-hero/.test(h)) throw new Error('Coach headline should use the hero gradient');
+  if (!/jaid-coach/.test(h)) throw new Error('the /jaid-coach command should still be present + copyable');
+  // --red/--amber/--green encode compaction + dumb-zone state; a decorative highlight must not reuse them
+  const cta = h.slice(h.indexOf('cta-card'), h.indexOf('cta-card') + 600);
+  if (/var\(--red\)|var\(--amber\)|var\(--green\)/.test(cta)) {
+    throw new Error('CTA must not use semantic state colors — they mean "alert" everywhere else');
+  }
 });
 
 // ---- report ----

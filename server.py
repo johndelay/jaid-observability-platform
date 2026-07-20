@@ -861,7 +861,7 @@ class Handler(BaseHTTPRequestHandler):
     def _cost(self):
         """Cost history + current 5h-block burn (Sprint 3). Empty-but-valid if the store is off."""
         if not _store:
-            self._send_json({"enabled": False, "burn": None, "daily": [], "projects": [], "total_usd": 0})
+            self._send_json({"enabled": False, "burn": None, "daily": [], "projects": [], "total_usd": 0, "top_sessions": []})
             return
         try:
             self._send_json({
@@ -879,10 +879,12 @@ class Handler(BaseHTTPRequestHandler):
                 # approximate Extra-Usage overage $ today — cost accrued while over the cap, for
                 # extra-usage-ENABLED accounts only (a capped account without it is blocked, not billed).
                 "overage": _store.overage_by_account(_extra_usage_accounts(), "today"),
+                "top_sessions": _store.top_sessions(10),   # priciest sessions (content-free: ids, counts, money)
                 "events": _store.event_totals(),                   # fleet-wide behavioral-event rollup (Phase 6b)
             })
         except Exception as e:  # noqa: BLE001
-            self._send_json({"enabled": True, "error": str(e), "burn": None, "daily": [], "projects": [], "total_usd": 0})
+            self._send_json({"enabled": True, "error": str(e), "burn": None, "daily": [], "projects": [], "total_usd": 0,
+                             "top_sessions": []})
 
     def _report(self):
         """Trophy Room reporting (V10 Slice 1): lifetime vanity totals + active-day streaks + a per-bucket
