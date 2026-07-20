@@ -708,6 +708,31 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.s.session_prefs_all()["sid-1"]["nickname"], "my run")
         self.assertFalse(self.s.set_session_pref(None, hidden=True))   # no session_id → no-op
 
+    def test_top_sessions_ranks_by_cost_and_counts_all_token_kinds(self):
+        now = time.time()
+        def row(mid, sid, cost, inp=0, out=0, cr=0, cc=0, side=0, host="h1", proj="p1"):
+            return {"message_id": mid, "request_id": mid, "session_id": sid, "ts": now, "cost_usd": cost,
+                    "input_tokens": inp, "output_tokens": out, "cache_read": cr, "cache_creation": cc,
+                    "is_sidechain": side, "host": host, "project": proj}
+        self.s.record_many([
+            row("a1", "cheap", 1.0, inp=10, out=5),
+            row("b1", "rich",  5.0, inp=10, out=5, cr=1000, cc=500),
+            row("b2", "rich",  4.0, inp=10, out=5, side=1),          # sidechain: billed, so it COUNTS
+            row("c1", "mid",   3.0, inp=1,  out=1),
+        ])
+        top = self.s.top_sessions(10)
+        self.assertEqual([t["session_id"] for t in top], ["rich", "mid", "cheap"])   # cost-descending
+        rich = top[0]
+        self.assertAlmostEqual(rich["cost_usd"], 9.0, places=6)      # sidechain spend included
+        self.assertEqual(rich["messages"], 2)
+        # tokens must include cache_read + cache_creation, not just input+output (the session_total outlier)
+        self.assertEqual(rich["tokens"], (10 + 5 + 1000 + 500) + (10 + 5))
+        self.assertEqual(rich["host"], "h1")
+        self.assertEqual(rich["project"], "p1")
+        # limit is honored and coerced
+        self.assertEqual(len(self.s.top_sessions(2)), 2)
+        self.assertEqual(len(self.s.top_sessions(0)), 3)             # 0 → falls back to the default, not empty
+
     def test_session_color_set_preserve_and_clear(self):
         self.assertEqual(self.s.session_colors(), {})
         self.s.set_session_pref("sid-c", color="cyan")

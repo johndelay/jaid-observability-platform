@@ -567,6 +567,28 @@ class Store:
         return {"median": pick(0.5), "p90": pick(0.9), "max": vals[-1], "sessions": len(vals)}
 
     @_cached_agg()
+    def top_sessions(self, limit=10):
+        """The most expensive sessions → [{session_id, host, project, account, cost_usd, tokens, messages, ts}]
+        cost-descending. Content-free: ids, counts and money only, never conversation text.
+
+        Two conventions worth stating, because this file is inconsistent about both on purpose:
+          * tokens = input+output+cache_read+cache_creation, matching daily_totals/all_time_totals. The
+            two-column form in session_total() is the outlier and badly understates a cache-heavy session.
+          * is_sidechain is NOT filtered. This is a SPEND aggregate and subagent turns are genuinely billed,
+            so it matches project_totals/cost_by_account. Only context/turn-shape aggregates exclude them.
+        MAX() on the descriptive columns mirrors recent_sessions() — they're constant per session.
+        """
+        rows = self._all(
+            "SELECT session_id, COALESCE(SUM(cost_usd),0) c, COUNT(*) n, "
+            "COALESCE(SUM(input_tokens+output_tokens+cache_read+cache_creation),0) t, "
+            "MAX(ts) ts, MAX(project) project, MAX(host) host, MAX(account) account "
+            "FROM usage WHERE session_id IS NOT NULL GROUP BY session_id "
+            "ORDER BY c DESC LIMIT ?", (max(1, int(limit or 10)),))
+        return [{"session_id": r["session_id"], "cost_usd": round(r["c"], 4), "messages": r["n"],
+                 "tokens": r["t"], "ts": r["ts"], "project": r["project"],
+                 "host": r["host"], "account": r["account"]} for r in rows]
+
+    @_cached_agg()
     def project_totals(self):
         return [{"project": r["project"], "cost_usd": r["c"], "messages": r["n"]}
                 for r in self._all("SELECT project, COALESCE(SUM(cost_usd),0) c, COUNT(*) n "

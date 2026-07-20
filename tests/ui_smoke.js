@@ -1634,6 +1634,65 @@ check('launchModalBody covers tmux, host wiring, the PIN, and the read-only cave
   if (!/data-copy="tmux new[^"]*"/.test(b)) throw new Error('the tmux command should be copy-able');
 });
 
+// 22) MCP host filter: chips render for >1 host, hidden for 1, and selecting a host narrows the cards.
+check('renderMcp: host filter chips narrow to one host, hidden when only one reports', () => {
+  const host = (n, dead) => ({host: n, configured: 3, used: 3 - dead, dead, window_days: 30,
+                              servers: [{name: 'srv-' + n, status: 'ok', calls: 1, used: true, tier: 'active'}]});
+  win._mcp = {enabled: true, window_days: 30, hosts: [host('alpha', 1), host('beta', 0)]};
+  ctx.renderMcp();
+  let h = document.getElementById('scene-mcp').innerHTML;
+  if ((h.match(/data-mcphost="/g) || []).length !== 3) throw new Error('expected All + 2 host chips');
+  if (!/srv-alpha/.test(h) || !/srv-beta/.test(h)) throw new Error('unfiltered view should show both hosts');
+  // one host → nothing worth filtering, chips suppressed
+  win._mcp = {enabled: true, window_days: 30, hosts: [host('alpha', 1)]};
+  ctx.renderMcp();
+  if (/data-mcphost="/.test(document.getElementById('scene-mcp').innerHTML)) {
+    throw new Error('filter chips should be hidden with a single reporting host');
+  }
+});
+
+// 23) Cost: most-expensive-sessions table — ranked rows, masked identifiers, honest about sidechains.
+check('renderCost: top-sessions table renders ranked rows and masks identifiers', () => {
+  win._cost = {enabled: true, daily: [], projects: [], by_account: [], rate_eta: {}, overage: {},
+               top_sessions: [
+                 {session_id: 's-rich', host: 'boxA', project: '/srv/secret-proj', cost_usd: 9.5,
+                  tokens: 1515, messages: 2, account: 'a@x.com'},
+                 {session_id: 's-mid', host: 'boxB', project: '/srv/other', cost_usd: 3,
+                  tokens: 12, messages: 1, account: 'a@x.com'}]};
+  ctx.render(STATE);
+  const h = document.getElementById('scene-cost').innerHTML;
+  if (!/Most expensive sessions/i.test(h)) throw new Error('top-sessions card missing');
+  if ((h.match(/data-cost-sid="/g) || []).length !== 2) throw new Error('expected 2 ranked rows');
+  if (h.indexOf('s-rich') > h.indexOf('s-mid')) throw new Error('rows should be cost-descending');
+  // must NOT open the search scene's raw-conversation viewer
+  if (/data-open-sid=/.test(h)) throw new Error('cost rows must not reuse the raw-conversation data-open-sid');
+  // identifiers are masked unless reveal is on (screenshot safety)
+  if (/secret-proj/.test(h)) throw new Error('raw project path leaked — must go through projDisplay()');
+  if (/boxA/.test(h)) throw new Error('raw host leaked — must go through hostDisplay()');
+  // empty payload renders nothing rather than an empty shell
+  win._cost = {enabled: true, daily: [], projects: [], by_account: [], rate_eta: {}, overage: {}, top_sessions: []};
+  ctx.render(STATE);
+  if (/Most expensive sessions/i.test(document.getElementById('scene-cost').innerHTML)) {
+    throw new Error('with no data the card should not render at all');
+  }
+});
+
+// 24) Coach: the primary CTA is visually promoted and does NOT borrow the semantic state colors.
+check('renderCoach: CTA card + hero headline use brand tokens, not state colors', () => {
+  win._coach = {enabled: true, handoff: {cmd: '/jaid-coach'}, bundle: {}, recent_sessions: []};
+  ctx.renderCoach();
+  const h = document.getElementById('scene-coach').innerHTML;
+  if (!/cta-card/.test(h)) throw new Error('CTA card should carry the highlighted-card class');
+  if (!/cta-cmd/.test(h)) throw new Error('the command chip should carry the promoted class');
+  if (!/h2-hero/.test(h)) throw new Error('Coach headline should use the hero gradient');
+  if (!/jaid-coach/.test(h)) throw new Error('the /jaid-coach command should still be present + copyable');
+  // --red/--amber/--green encode compaction + dumb-zone state; a decorative highlight must not reuse them
+  const cta = h.slice(h.indexOf('cta-card'), h.indexOf('cta-card') + 600);
+  if (/var\(--red\)|var\(--amber\)|var\(--green\)/.test(cta)) {
+    throw new Error('CTA must not use semantic state colors — they mean "alert" everywhere else');
+  }
+});
+
 // ---- report ----
 let failed = 0;
 for (const [ok, name] of results) { console.log((ok ? '  PASS ' : '  FAIL ') + name); if (!ok) failed++; }

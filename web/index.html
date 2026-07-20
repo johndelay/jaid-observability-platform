@@ -376,6 +376,12 @@
   .roirow{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;font-size:12px;margin:5px 0}
   .roirow .hl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
   .roirow .rv{color:var(--txt);font-variant-numeric:tabular-nums}.roirow .rv.muted{color:var(--muted)}
+  /* 💸 most-expensive-sessions table: 4 columns (project · host · tokens · cost) */
+  .roirow.tshdr,.roirow.tsrow{grid-template-columns:1fr auto auto auto;gap:10px}
+  .roirow.tshdr{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);
+    border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:2px}
+  .roirow.tsrow{cursor:pointer;border-radius:6px;padding:3px 4px;margin:2px -4px}
+  .roirow.tsrow:hover{background:var(--card2)}
   .caphdr{font-size:11px;font-weight:700;color:var(--muted);margin:8px 0 2px}
   .lterm{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12.5px;line-height:1.4}
   .lterm dt{font-weight:800;color:var(--txt);white-space:nowrap}
@@ -477,6 +483,20 @@
   .apk b{font-size:15px;font-variant-numeric:tabular-nums}
   .apmix{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:4px 0;background:var(--card)}
   .apseg{display:block;height:100%}
+  /* 🧠 Coach — the scene's primary action. Accent ring + a filled command chip so it stops disappearing
+     into its own card (code.mcpcmd was var(--card) on a var(--card) .lcard = zero contrast). Uses the
+     brand tokens, never the semantic --red/--amber/--green, which mean "state" everywhere else. */
+  /* richer three-stop headline (matches the app title) for scenes that are a highlight, not a readout */
+  .legend h2.h2-hero{font-size:22px;
+    background:linear-gradient(90deg,var(--primary),var(--secondary),var(--accent));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .cta-card{border-color:var(--accent);box-shadow:0 0 0 1px rgba(0,217,255,.25),0 6px 22px rgba(0,217,255,.10)}
+  .lcard.cta-card h3.cta-h{font-size:15px;letter-spacing:.4px;font-family:var(--font-display);
+    text-transform:uppercase;background:linear-gradient(90deg,var(--primary),var(--accent));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  code.mcpcmd.cta-cmd{background:var(--card2);border-color:var(--accent);color:var(--accent);
+    font-size:13px;font-weight:700;padding:9px 11px}
+  code.mcpcmd.cta-cmd .cp{color:var(--muted)}
   .genbtn{width:100%;margin-top:8px;padding:10px;border:1px solid var(--accent);border-radius:8px;background:var(--card);color:var(--accent);font-weight:700;font-size:13px;cursor:pointer}
   .genbtn[disabled]{opacity:.6;cursor:default;border-color:var(--line);color:var(--muted)}
   /* 🔍 Search scene (V9) — the lone content-bearing scene */
@@ -933,6 +953,7 @@ function setReveal(v){ revealNames=!!v; prefSet('reveal',revealNames); rerenderA
 // Replaces machine names at the top with the detected Claude accounts. Tap a chip → filter the whole app
 // to that account; tap "All" (or the active chip) → clear. Hidden when ≤1 account (nothing to filter).
 let accountFilter=prefGet('acctFilter',null);
+let mcpHostFilter=prefGet('mcpHost',null);      // 🧩 MCP tax: show one reporting host, or null = all
 // Triage view filter: 'active' (default) shows live sessions; 'archived' shows the ones you've hidden.
 // Ephemeral (not persisted) — every load starts on Active. The Archived tab only appears when something
 // is archived (or you're already viewing it). Replaces the old standalone Archive scene.
@@ -1646,7 +1667,8 @@ function renderCost(list){
     +(burn?`<div class="chip"><b>${usd(burn.cost_per_hour)}/h</b><span>burn</span></div>`:'')
     +`<div class="chip"><b>${pa.length}</b><span>account${pa.length===1?'':'s'}</span></div>`
     +'</div>';
-  if(!pa.length){ sc.innerHTML=h+'<div class="empty">No cost or account data yet.</div>'; return; }
+  // No accounts yet doesn't mean no spend data — the priciest-sessions table stands on its own.
+  if(!pa.length){ sc.innerHTML=h+'<div class="empty">No cost or account data yet.</div>'+topSessionsHTML(); return; }
   h+='<div class="ratelimits">'+pa.map(a=>{
       const lbl=acctLabel(a.account), approx=a.approx&&lbl!=='plan limits';
       const eu=extraUsage(a);
@@ -1667,7 +1689,37 @@ function renderCost(list){
         ${a.today!=null?`<div class="chip"><b>${usd(a.today)}</b><span>today</span></div>`:''}
         ${ratechip(a.five_hour,'5h')}${ratechip(a.seven_day,'7d')}
       </div>`;}).join('')+'</div>';
+  h+=topSessionsHTML();
   sc.innerHTML=h;
+}
+// Priciest sessions — the "where did the money actually go?" view. Content-free: host, project, spend and
+// token count, never conversation text. Sessions are labelled by project (a bare UUID means nothing to a
+// human), and every raw identifier goes through the masking helpers so the scene stays screenshot-safe.
+// Delegated on the stable scene element (renderCost replaces innerHTML, which would wipe row listeners).
+// Opens the session drill-in — deliberately NOT the search scene's data-open-sid, which opens the raw
+// conversation viewer and is walled to loopback.
+(function(){ const sc=document.getElementById('scene-cost'); if(!sc)return;
+  const open=el=>{ const sid=el.getAttribute('data-cost-sid'); if(sid)openDetail(sid); };
+  sc.addEventListener('click',e=>{ const r=e.target.closest('[data-cost-sid]'); if(r){ open(r); } });
+  sc.addEventListener('keydown',e=>{ const r=e.target.closest&&e.target.closest('[data-cost-sid]');
+    if(r&&(e.key==='Enter'||e.key===' ')){ e.preventDefault(); open(r); } });
+})();
+function topSessionsHTML(){
+  const rows=((window._cost||{}).top_sessions)||[];
+  if(!rows.length)return '';
+  const shown=accountFilter?rows.filter(r=>r.account===accountFilter):rows;
+  if(!shown.length)return '<div class="lcard"><h3>💸 Most expensive sessions</h3>'
+    +'<p class="foot" style="text-align:left">None for this account — clear the account filter to see the fleet.</p></div>';
+  return '<div class="lcard"><h3>💸 Most expensive sessions</h3>'
+    +'<div class="roirow tshdr"><span class="hl">session</span><span class="rv muted">host</span>'
+      +'<span class="rv muted">tokens</span><span class="rv muted">cost</span></div>'
+    +shown.map(r=>`<div class="roirow tsrow" data-cost-sid="${esc(r.session_id)}" role="button" tabindex="0" title="${esc(projDisplay(r.project))} · ${r.messages} message${r.messages===1?'':'s'} — open this session">`
+      +`<span class="hl">${esc(projDisplay(r.project))}</span>`
+      +`<span class="rv muted">${esc(hostDisplay(r.host))}</span>`
+      +`<span class="rv">${fmtTok(r.tokens)}</span>`
+      +`<span class="rv"><b>${usd(r.cost_usd)}</b></span></div>`).join('')
+    +'<p class="foot" style="text-align:left;margin-top:8px">Top '+shown.length+' by spend, all time · includes '
+      +'subagent turns (they\'re billed too) · tokens = input + output + cache. Tap a row to open it.</p></div>';
 }
 
 // ---- History / Trophy Room scene: all-time totals + 14-day spend bars + top projects (from /cost) ----
@@ -2161,7 +2213,7 @@ function coachAge(ts){ if(!ts)return ''; const d=Date.now()/1000-ts;
 function renderCoach(){
   const sc=document.getElementById('scene-coach'); if(!sc)return;
   const c=window._coach;
-  let h='<h2>🧠 Coach</h2><p class="intro">Coaching from your <b>content-free</b> metrics (tokens, zones, '
+  let h='<h2 class="h2-hero">🧠 Coach</h2><p class="intro">Coaching from your <b>content-free</b> metrics (tokens, zones, '
     +'event counts — never your conversation). Every figure is an <b>estimate</b>: opportunities, not judgments. '
     +'Nothing leaves your network.</p>';
   if(!c||c.enabled===false){ sc.innerHTML=h+'<div class="empty">No data yet — it builds as the collector records usage.</div>'; return; }
@@ -2182,9 +2234,12 @@ function renderCoach(){
   h+='</div>';
   // — Coach-me handoff (always available; Slice A engine) —
   const ho=c.handoff||{}, cmd=ho.cmd||'/jaid-coach';
-  h+='<div class="lcard"><h3>Coach me with Claude Code</h3>'
+  // This is the scene's primary action, so it gets the app's "highlighted card" idiom (accent ring, as used
+  // by the Savings card) and a filled CTA. Deliberately NOT --red/--amber/--green: those encode compaction
+  // and dumb-zone state everywhere else, and a decorative choice must not start reading as an alert.
+  h+='<div class="lcard cta-card"><h3 class="cta-h">✨ Coach me with Claude Code</h3>'
     +`<p class="foot" style="text-align:left">${esc(ho.note||'Run this in your own Claude Code — it reads your local metrics and coaches you, no server or egress.')}</p>`
-    +`<code data-copy="${esc(cmd)}" class="mcpcmd">${esc(cmd)}<span class="cp">⧉ copy</span></code></div>`;
+    +`<code data-copy="${esc(cmd)}" class="mcpcmd cta-cmd">${esc(cmd)}<span class="cp">⧉ copy</span></code></div>`;
   // — the content-free numbers it coaches on (the bundle) —
   const b=c.bundle||{};
   if(b.score!=null||b.messages){
@@ -2679,12 +2734,22 @@ function renderMcp(){
     const pctSharp=Math.round(fl.median/ZONE_TOK.good*100);
     h+=`<div class="lcard" style="text-align:center">
         <div style="font-size:32px;font-weight:800;color:var(--accent);text-shadow:0 0 12px var(--accent)">~${fmtTok(fl.median)}</div>
-        <div class="foot">median <b>context floor</b> — cached tokens every turn starts with (tools + system + project memory + MCP tool defs), across ${fl.sessions} recent session${fl.sessions===1?'':'s'}</div>
+        <div class="foot">median <b>context floor</b> — cached tokens every turn starts with (tools + system + project memory + MCP tool defs), across ${fl.sessions} recent session${fl.sessions===1?'':'s'} <b>fleet-wide</b> (this figure is not per-host, so the host filter below doesn’t change it)</div>
         <div class="foot" style="margin-top:4px">that’s <b>${pctSharp}%</b> of the 🟢 Sharp zone (${fmtTok(ZONE_TOK.good)}) <b>before you type</b> · p90 ~${fmtTok(fl.p90)} · peak ~${fmtTok(fl.max)}</div></div>`;
     h+=`<div class="lcard"><p class="foot" style="text-align:left;margin:0">These are <b>real billed tokens</b> (cache_creation + cache_read on each session’s first turn) — not an estimate. It’s the <b>whole</b> cached prefix, <b>not MCP-only</b>: isolating per-server MCP cost would need your server schemas/config, which this tool <b>refuses to read</b> (no secrets). Trimming the dead-weight servers below shrinks this floor.</p></div>`;
   }
-  const hosts=(d&&d.enabled!==false&&d.hosts)||[];
-  if(!hosts.length){ sc.innerHTML=h+'<div class="empty">No MCP reports yet — set up the probe below.</div>'+mcpSetup(); return; }
+  const allHosts=(d&&d.enabled!==false&&d.hosts)||[];
+  if(!allHosts.length){ sc.innerHTML=h+'<div class="empty">No MCP reports yet — set up the probe below.</div>'+mcpSetup(); return; }
+  // Host filter. Mirrors the account-chip pattern: a stale selection (host stopped reporting) resets to All
+  // rather than showing an empty scene. Hidden when there's only one host — nothing to filter.
+  if(mcpHostFilter&&!allHosts.some(x=>x.host===mcpHostFilter)){ mcpHostFilter=null; prefSet('mcpHost',null); }
+  if(allHosts.length>1){
+    h+='<div class="apick">'
+      +`<button class="achip${mcpHostFilter?'':' on'}" data-mcphost="">All <span class="ac">${allHosts.length}</span></button>`
+      +allHosts.map(x=>`<button class="achip${mcpHostFilter===x.host?' on':''}" data-mcphost="${esc(x.host)}" style="--h:${hash(x.host)%360}"><i></i>${esc(hostDisplay(x.host))}${x.dead?` <span class="ac">${x.dead} dead</span>`:''}</button>`).join('')
+      +'</div>';
+  }
+  const hosts=mcpHostFilter?allHosts.filter(x=>x.host===mcpHostFilter):allHosts;
   const wd=(d&&d.window_days)||30, nowS=Date.now()/1000;
   hosts.forEach(ht=>{
     h+=`<div class="lcard"><div class="mcphost-hd"><h3>${esc(hostDisplay(ht.host))}</h3>`
@@ -2714,6 +2779,9 @@ async function pollMcp(){try{const r=await fetch('/mcp');if(r.ok){window._mcp=aw
   sc.addEventListener('click',e=>{
     if(e.target.closest('[data-mcphelp]')){ openMcpHelp(); return; }
     if(e.target.closest('[data-ctxhelp]')){ openCtxHelp(); return; }
+    const mh=e.target.closest('[data-mcphost]');
+    if(mh){ const v=mh.getAttribute('data-mcphost')||null;
+      mcpHostFilter=(v===mcpHostFilter)?null:v; prefSet('mcpHost',mcpHostFilter); renderMcp(); return; }
     const cp=e.target.closest('[data-copy]'); if(!cp)return;
     copyText(cp.getAttribute('data-copy')).then(ok=>{ const c=cp.querySelector('.cp');
       if(c){const o=c.textContent;c.textContent=ok?'✓ copied':'⚠ failed';setTimeout(()=>c.textContent=o,1500);} });
