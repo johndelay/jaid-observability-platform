@@ -526,6 +526,42 @@ const BENIGN = [/sw\.js/, /manifest\.webmanifest/, /favicon/, /service ?worker/i
     await page.waitForFunction(() => { const s = document.getElementById('schelp'); return s && s.hidden; }, undefined, { timeout: 3000 });
   });
 
+  // The reported bug: a manual browser refresh threw you back to Triage, so there was no safe way to get
+  // fresh data while reading a scene. Two fixes, tested here — a per-session refresh button, and scene
+  // persistence across a reload. The reload runs late so it can't disturb the checks above.
+  await check('drill-in exposes a working manual refresh button', async () => {
+    const sid = await page.evaluate(() => {
+      const el = document.querySelector('[data-sid]'); return el ? el.getAttribute('data-sid') : null;
+    });
+    if (!sid) throw new Error('no session available to drill into');
+    await page.evaluate(id => openDetail(id), sid);
+    await page.waitForFunction(() => {
+      const d = document.getElementById('detail'), b = document.getElementById('drefresh');
+      return d && !d.hidden && b && b.offsetParent !== null;   // present AND actually visible
+    }, undefined, { timeout: 3000 });
+    await page.$eval('#drefresh', el => el.click());           // must not throw or blank the drill-in
+    await page.waitForFunction(() => {
+      const b = document.getElementById('drefresh'), s = document.getElementById('dstats');
+      return b && !b.classList.contains('spin') && s && s.innerHTML.length > 50;
+    }, undefined, { timeout: 5000 });
+    await page.evaluate(() => closeDetail());
+  });
+
+  await check('the current scene survives a page reload (does not snap back to Triage)', async () => {
+    await page.evaluate(() => { const d = document.getElementById('detail'); if (d && !d.hidden) closeDetail(); });
+    await page.evaluate(() => window.goScene && window.goScene(2));
+    const before = await page.evaluate(() => (document.getElementById('navlabel') || {}).textContent || '');
+    if (/Triage/.test(before)) throw new Error('setup failed: expected to be off Triage before reloading');
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 8000 });
+    await page.waitForFunction(() => {
+      const n = document.getElementById('navlabel'); return n && n.textContent && n.textContent.trim();
+    }, undefined, { timeout: 5000 });
+    const after = await page.evaluate(() => (document.getElementById('navlabel') || {}).textContent || '');
+    const name = s => s.split('·')[0].trim();
+    if (name(after) !== name(before)) throw new Error(`reload lost the scene: was "${before}", now "${after}"`);
+    await page.evaluate(() => window.goScene && window.goScene(0));   // restore for the screenshot
+  });
+
   // Screenshot artifact (gitignored) — eyes-on confirmation of real layout/CSS, fixed name so it overwrites.
   let shot = '';
   await check('saves a full-page screenshot artifact', async () => {

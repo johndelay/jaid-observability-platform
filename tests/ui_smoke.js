@@ -527,6 +527,24 @@ check('dumb-zone banner in drill-in + summary chip', () => {
   if (!d.includes('Drifting')) throw new Error('zone label/advice missing in drill-in');
 });
 
+// 9j3) the trajectory sparkline auto-scales to the session's own peak, so without y-axis ticks it shows the
+// SHAPE but no values — you can't tell where you are. Guards the ticks, and that a boundary ABOVE the peak
+// is suppressed rather than stacked on top of the max label.
+check('sparkline carries y-axis ticks, clamped to what is on the plot', () => {
+  const t = Date.now() / 1000;
+  const deep = ctx.svgSpark([{ ts: t - 600, ctx: 10000 }, { ts: t, ctx: 250000 }]);
+  if (!deep.includes('sparkax')) throw new Error('y-axis gutter missing from the sparkline');
+  // NB: labels come from fmtTok(), which is one-decimal ("120.0k", not "120k") — asserting the bare form
+  // would make the negative check below silently unfailable.
+  if (!deep.includes('250.0k')) throw new Error('peak value not labelled on the y-axis');
+  if (!deep.includes('200.0k') || !deep.includes('120.0k')) throw new Error('zone-boundary ticks (200k/120k) missing');
+  if (!deep.includes('stroke-dasharray')) throw new Error('boundary gridlines missing (ticks would align to nothing)');
+  // a shallow session peaks below both boundaries — neither tick belongs on the plot
+  const shal = ctx.svgSpark([{ ts: t - 600, ctx: 1000 }, { ts: t, ctx: 9000 }]);
+  if (shal.includes('200.0k') || shal.includes('120.0k'))
+    throw new Error('a zone boundary above the plot peak must not be drawn as a tick');
+});
+
 // 9j2) conflation fix: a low-% / high-abs-token tile DECOUPLES the two signals — the % keeps its
 // COMPACTION color (NOT red at 23%) and the SOFT inline 🧠 dumb-zone pip appears. Guards the reported bug
 // (red "23%" that looked like "about to compact" on a 1M window).

@@ -214,7 +214,10 @@
   .dhead{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
   #dback{background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:8px;
     padding:6px 12px;font-size:13px;font-weight:700}
-  #dtitle{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;overflow:hidden}
+  #dtitle{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;overflow:hidden;flex:1 1 auto}
+  #drefresh{flex:0 0 auto;background:var(--card2);color:var(--txt);border:1px solid var(--line);
+    border-radius:8px;padding:6px 10px;font-size:14px;line-height:1}
+  #drefresh.spin{opacity:.5}
   #dstats{padding:12px 16px;border-bottom:1px solid var(--line)}
   #dstats .drow{font-size:14px;margin:3px 0} #dstats .drow b{font-size:20px;font-variant-numeric:tabular-nums}
   .muted{color:var(--muted)}
@@ -450,6 +453,11 @@
   /* drill-in context-trajectory sparkline */
   .spark{margin:8px 0;border:1px solid var(--line);border-radius:9px;padding:7px 9px;background:var(--card2)}
   .spark .sl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:2px}
+  /* y-axis gutter: the plot is auto-scaled, so without these ticks you can see the SHAPE but not the VALUES */
+  .sparkbody{display:flex;align-items:stretch;gap:5px}
+  .sparkax{position:relative;flex:0 0 34px;font-size:9px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .sparkax i{position:absolute;right:0;transform:translateY(-50%);font-style:normal;white-space:nowrap;line-height:1}
+  .sparkplot{flex:1 1 auto;min-width:0}
   /* drill-in behavioral-events line (Phase 6) */
   .evrow{font-size:12px;color:var(--muted);margin:6px 0;display:flex;flex-wrap:wrap;gap:3px 12px}
   /* drill-in MCP observed-usage chips (MCP tax, Slice 1) */
@@ -783,7 +791,7 @@
   </div>
 </div>
 <div id="detail" class="overlay" hidden>
-  <div class="dhead"><button id="dback">‹ back</button><div id="dtitle"></div></div>
+  <div class="dhead"><button id="dback">‹ back</button><div id="dtitle"></div><button id="drefresh" title="Refresh this session now (stats and activity refresh on their own; this also re-pulls the trajectory)">⟳</button></div>
   <div id="dstats"></div>
   <div class="dlabel"><span>Activity — what Claude is doing</span><span id="dlive" class="muted"></span></div>
   <div id="dstream" class="stream"></div>
@@ -1744,9 +1752,21 @@ function svgSpark(pts,opts){
   const bands=band(0,ZONE_TOK.drift,'var(--green)')+band(ZONE_TOK.drift,ZONE_TOK.danger,'var(--amber)')+band(ZONE_TOK.danger,maxy,'var(--red)');
   const d=pts.map((p,i)=>(i?'L':'M')+X(p.ts).toFixed(1)+' '+Y(p.ctx||0).toFixed(1)).join(' ');
   const last=pts[pts.length-1], lz=zone({context_tokens:last.ctx});
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="display:block">${bands}`
+  // gridlines at the zone boundaries, so the axis ticks line up with something visible in the plot
+  const grid=[ZONE_TOK.drift,ZONE_TOK.danger].filter(v=>v<maxy)
+    .map(v=>`<line x1="0" y1="${Y(v).toFixed(1)}" x2="${w}" y2="${Y(v).toFixed(1)}" stroke="var(--line)" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" opacity=".55"/>`).join('');
+  const svg=`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="none" style="display:block">${bands}${grid}`
     +`<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`
     +`<circle cx="${X(last.ts).toFixed(1)}" cy="${Y(last.ctx).toFixed(1)}" r="2.5" fill="${lz.color}"/></svg>`;
+  // y-axis ticks. The plot auto-scales to the session's own peak, which is what makes it readable — but it
+  // also means an unlabelled curve tells you the shape and nothing about WHERE you are. These give it units.
+  const ticks=[]; const seen=new Set();
+  const tick=(v,col)=>{ if(v>maxy)return;   // a boundary above the peak isn't on this plot — don't stack it on the top label
+    const k=Math.round(v/1000); if(seen.has(k))return; seen.add(k);
+    ticks.push(`<i style="top:${((Y(v)/h)*100).toFixed(1)}%${col?';color:'+col:''}">${fmtTok(v)}</i>`); };
+  tick(maxy); tick(ZONE_TOK.danger,'var(--red)'); tick(ZONE_TOK.drift,'var(--amber)'); tick(0);
+  return `<div class="sparkbody"><div class="sparkax" style="height:${h}px">${ticks.join('')}</div>`
+    +`<div class="sparkplot">${svg}</div></div>`;
 }
 // generic heatmap grid (GitHub-calendar Slice 2 + the Slice-4 time-of-day grid): cells=[{x,y,value,tip}],
 // laid out on a cols×rows grid, colored by value in 5 intensity buckets. No CDN — hand-rolled <rect>s.
@@ -2866,10 +2886,15 @@ const hideSession=sid=>setHidden(sid,true), unhideSession=sid=>setHidden(sid,fal
 const detail=document.getElementById('detail'), dtitle=document.getElementById('dtitle'),
       dstats=document.getElementById('dstats'), dstream=document.getElementById('dstream'),
       dlive=document.getElementById('dlive');
-let openSid=null, actTimer=null, histPts=[], evData=null;
+let openSid=null, actTimer=null, histTimer=null, histPts=[], evData=null;
 const dreply=document.getElementById('dreply'), rtext=document.getElementById('rtext'),
       rsend=document.getElementById('rsend'), rmsg=document.getElementById('rmsg');
 document.getElementById('dback').onclick=closeDetail;
+// manual refresh: pulls everything for the open session at once, so you never have to reload the page
+// (a reload is the thing that used to throw you back to the first scene).
+(()=>{const b=document.getElementById('drefresh'); if(!b)return;
+  b.onclick=async()=>{ if(!openSid)return; const sid=openSid; b.classList.add('spin');
+    try{ await Promise.all([fetchHistory(sid),fetchEvents(sid),pollAct()]); } finally{ b.classList.remove('spin'); } };})();
 app.addEventListener('click',e=>{
   const tv=e.target.closest('[data-trview]'); if(tv){ setTriageView(tv.getAttribute('data-trview')); render(window._list||[]); return; }
   const uh=e.target.closest('[data-unhide]'); if(uh){ unhideSession(uh.getAttribute('data-unhide')); return; }
@@ -2891,7 +2916,11 @@ dstats.addEventListener('click',e=>{
   if(ac&&openSid){ const a=ac.getAttribute('data-action'); if(a==='hide')hideSession(openSid); else if(a==='unhide')unhideSession(openSid); }
 });
 function openDetail(sid){openSid=sid;histPts=[];evData=null;colorMsg='';colorMsgCls='';detail.hidden=false;dstream.innerHTML='<div class="muted" style="padding:20px">loading…</div>';
-  rtext.value='';setRmsg('');autosize();renderDetailStats();fetchHistory(sid);fetchEvents(sid);pollAct();if(actTimer)clearInterval(actTimer);actTimer=setInterval(pollAct,2500);}
+  rtext.value='';setRmsg('');autosize();renderDetailStats();fetchHistory(sid);fetchEvents(sid);pollAct();
+  if(actTimer)clearInterval(actTimer);actTimer=setInterval(pollAct,2500);
+  // stats + activity already refresh every 2.5s; the trajectory/events did not, so the graph sat frozen for
+  // as long as the drill-in stayed open. 30s is plenty — context climbs slowly and /history is the heavier read.
+  if(histTimer)clearInterval(histTimer);histTimer=setInterval(()=>{if(openSid){fetchHistory(openSid);fetchEvents(openSid);}},30000);}
 // context trajectory for the sparkline — fetched once on open (it grows slowly); re-renders stats when it lands.
 async function fetchHistory(sid){
   try{const r=await fetch('/history?id='+encodeURIComponent(sid)); if(!r.ok)return; const d=await r.json();
@@ -2912,7 +2941,7 @@ function evChips(c){
   if(c.tool_error)     parts.push(`<span title="Tool errors">⚠ ${c.tool_error} error${c.tool_error>1?'s':''}</span>`);
   return parts.join(' · ');
 }
-function closeDetail(){openSid=null;detail.hidden=true;dreply.hidden=true;if(actTimer){clearInterval(actTimer);actTimer=null;}}
+function closeDetail(){openSid=null;detail.hidden=true;dreply.hidden=true;if(actTimer){clearInterval(actTimer);actTimer=null;}if(histTimer){clearInterval(histTimer);histTimer=null;}}
 // 🧩 MCP observed-usage chips (Slice 1, "MCP tax"): which MCP servers this session actually CALLED, sorted
 // busiest-first. Just observed usage — the per-server token cost ("tax") comes in a later slice. Empty → ''.
 function mcpChips(mcp){
@@ -3274,6 +3303,9 @@ function goScene(i){
   const vis=visibleScenes(); if(!vis.length)return;
   sceneIdx=Math.max(0,Math.min(i,vis.length-1));
   track.style.transform='translateX(-'+(sceneIdx*sceneW())+'px)';
+  // remember the scene by ID (not index — enabling/disabling a scene shifts indices) so a page reload
+  // comes back where you were instead of snapping to Triage.
+  const cur=vis[sceneIdx]; if(cur)prefSet('scene.last',cur.id);
   updateNav();
 }
 function updateNav(){
@@ -3471,7 +3503,10 @@ if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('resize',()=>goScene(sceneIdx));
 }
 
-applyVisibility(); wireCoachTabs(); paintCoachTabs(); goScene(0);   // start on Triage
+applyVisibility(); wireCoachTabs(); paintCoachTabs();
+// restore the last scene viewed on this device; fall back to Triage if it's gone or was never set
+(()=>{ const want=prefGet('scene.last',null), vis=visibleScenes();
+  const i=want?vis.findIndex(s=>s.id===want):-1; goScene(i>=0?i:0); })();
 
 // auto-rotate scenes (wall-display mode; paused while the drill-in or menu is open)
 setInterval(()=>{ if(feat.autorotate&&detail&&detail.hidden&&menu&&menu.hidden&&(!mcphelp||mcphelp.hidden)&&(!helpmodal||helpmodal.hidden)&&(!coachmodal||coachmodal.hidden)&&(!convo||convo.hidden)&&(!termsmodal||termsmodal.hidden)){ const n=visibleScenes().length; if(n>1)goScene((sceneIdx+1)%n); } },12000);
