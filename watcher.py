@@ -492,7 +492,8 @@ def collect_snapshots():
         # Only a .state.json carries an explicit `state` (read_state_files sets it only for kind=="state").
         # A statusline-only .status.json has no `state` key, so st.get("state") is None — it must NOT clobber
         # the transcript-derived 'waiting'/'working'. (Bug: hosts that run the statusline hook but not the
-        # state hooks — e.g. pblaptop — had every session forced to "unknown"/needs_me=False, so a session
+        # state hooks — e.g. a host with only the statusline installed — had every session forced to
+        # "unknown"/needs_me=False, so a session
         # genuinely awaiting input never surfaced in Triage.)
         if st.get("state") is not None:
             base["state"] = st.get("state")

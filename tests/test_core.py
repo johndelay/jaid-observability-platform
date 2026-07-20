@@ -260,7 +260,7 @@ class WatcherTests(unittest.TestCase):
             shutil.rmtree(proj, ignore_errors=True)
 
     def test_statusline_only_host_keeps_transcript_state(self):
-        # Regression (pblaptop Triage blind-spot, 2026-06-12): a host that runs the statusline hook
+        # Regression (statusline-only host Triage blind-spot, 2026-06-12): a host that runs the statusline hook
         # (.status.json) but NOT the state hooks (.state.json) must keep the transcript-derived
         # 'waiting'. The status file carries no `state` key, so it must not clobber state to None
         # (which rendered as "unknown"/needs_me=False, hiding sessions actually awaiting input).
