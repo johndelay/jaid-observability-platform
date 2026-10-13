@@ -27,6 +27,7 @@ from urllib.parse import urlparse, parse_qs
 import version
 import crypto
 import fsperms
+import ysk
 
 # ---- config (env-overridable) ------------------------------------------------
 PORT             = int(os.environ.get("CC_PORT", "8099"))
@@ -78,6 +79,9 @@ REPLY_MAX_LEN    = int(os.environ.get("CC_REPLY_MAX_LEN", "4000"))
 
 WINDOW_TIERS = [200_000, 1_000_000]
 DB_POLL = float(os.environ.get("CC_DB_POLL", "60"))   # transcript→store ingest cadence (history; light)
+# "You should know" plugin capture (ysk.py) rides the same cadence: the plugin's state file (CC_YSK_STORE_DIR;
+# compose mounts it read-only) and the ysk-rate skill's ratings file. Neither present → nothing happens.
+YSK_RATINGS_PATH = os.environ.get("CC_YSK_RATINGS", "")   # blank → ysk-ratings.jsonl next to the usage DB
 # V9 local transcript search (the ONE content-bearing feature). A SECOND listener on CONTENT_PORT is
 # published to host loopback only (compose: 127.0.0.1:8100:8100), so raw content is reachable solely from
 # a browser ON the host. The bound port — not a spoofable header or a Docker-masqueraded source IP — is the
@@ -1625,6 +1629,36 @@ def local_scan_loop():
         time.sleep(max(0.0, POLL_INTERVAL - (time.monotonic() - start)))
 
 
+_ysk_ratings_sig = None   # (mtime, size) of the ratings file at its last read — skip re-parsing an unchanged file
+
+
+def ysk_poll(host=None, now=None, store_dir=None, ratings_path=None):
+    """One pass of the "You should know" capture (ysk.py): the plugin's state file → ysk_shown/ysk_resolved,
+    the ratings file → ysk_rating. Idempotent (stable event_ids). The FIRST successful read of a state file is
+    flagged as a backfill — those notes were shown at unknown earlier times. Returns events inserted."""
+    global _ysk_ratings_sig
+    if _store is None:
+        return 0
+    now = time.time() if now is None else now
+    n = 0
+    st = ysk.read_state(store_dir)
+    if st is not None:
+        first = not _store.get_meta("ysk_state_backfill_v1")
+        n += _store.record_events(ysk.state_events(st, host=host, now=now, backfill=first))
+        if first:
+            _store.set_meta("ysk_state_backfill_v1", "done")
+    path = ratings_path or YSK_RATINGS_PATH or os.path.join(os.path.dirname(_store.path), "ysk-ratings.jsonl")
+    try:
+        sig = (os.path.getmtime(path), os.path.getsize(path))
+    except OSError:
+        return n
+    if sig != _ysk_ratings_sig:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            n += _store.record_events(ysk.rating_events(fh, host=host))
+        _ysk_ratings_sig = sig
+    return n
+
+
 def ingest_loop():
     """Persist this host's per-message token usage into the store for cost history + burn + ETA.
     Re-reads each active transcript's tail every DB_POLL; INSERT OR IGNORE makes that idempotent."""
@@ -1656,9 +1690,12 @@ def ingest_loop():
                             pass
                     _store.set_meta("event_backfill_v1", "done")
                     print(f"[collector] event backfill: {bf} events from full transcripts", flush=True)
-                # v2: re-scan for mcp_call events (a new type added after v1 ran). Idempotent — stable event_id
-                # + INSERT OR IGNORE means only the new mcp_call rows insert; existing events are skipped.
-                if not _store.get_meta("event_backfill_v2_mcp"):
+                # v2+: re-scan for a type added after v1 ran (v2 mcp_call, v3 ysk_prompt_taken). Idempotent —
+                # stable event_id + INSERT OR IGNORE means only the new type's rows insert; existing ones are skipped.
+                for flag, label in (("event_backfill_v2_mcp", "mcp_call"),
+                                    ("event_backfill_v3_ysk", "ysk_prompt_taken")):
+                    if _store.get_meta(flag):
+                        continue
                     bf2 = 0
                     for path in watcher.all_transcript_files():
                         try:
@@ -1666,8 +1703,8 @@ def ingest_loop():
                                 bf2 += _store.ingest_event_lines(fh, host=watcher.HOSTNAME)
                         except OSError:
                             pass
-                    _store.set_meta("event_backfill_v2_mcp", "done")
-                    print(f"[collector] mcp_call backfill: {bf2} new events (idempotent re-scan)", flush=True)
+                    _store.set_meta(flag, "done")
+                    print(f"[collector] {label} backfill: {bf2} new events (idempotent re-scan)", flush=True)
             except Exception:  # noqa: BLE001
                 pass
             first = False
@@ -1683,6 +1720,11 @@ def ingest_loop():
                 ev_inserted += _store.ingest_event_lines(lines, host=watcher.HOSTNAME)
             except Exception:  # noqa: BLE001
                 pass
+        # 3b) "You should know" plugin: its state file + the ratings file → ysk_* events (same table, same count).
+        try:
+            ev_inserted += ysk_poll(host=watcher.HOSTNAME)
+        except Exception:  # noqa: BLE001
+            pass
         if inserted:
             print(f"[collector] ingested {inserted} new usage rows", flush=True)
         if ev_inserted:

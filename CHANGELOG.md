@@ -17,6 +17,28 @@ This is a curated, user-facing log — for the full commit history see the Git l
   changelog — the second after the risk was written up in `RELEASING.md` — and a missing entry is
   invisible by construction, so this is a check rather than another warning. `manifest.json` in
   particular had no version guard at all despite being the file the update checker fetches.
+- **"You should know" capture.** Claude Code's built-in *You should know* plugin puts a one-line note above
+  the prompt during long turns. JAID now records, as events: each note **shown** and **answered** (read from
+  the plugin's state file), each note you **took into the main session** (from transcripts, back-filled from
+  history), and each **rating** you give one. All four share a `note_key`, so a note can be followed from
+  shown → taken → rated. Shown times are exact only for a note still on screen when JAID polls; notes the
+  plugin had already recorded before the first read are marked `backfill` instead of being given a time
+  they don't have. The plugin's own checks never appear in transcripts, so this measures what it *said*, not
+  what it *cost*. No dashboard view yet.
+- **`ysk-rate` skill** (`skill/ysk-rate/`). Ask Claude to *"rate that note"*: it scores the note on five
+  yes/no checks (true · new · matters · timely · acted), proposes GOOD / MEH / BAD with one sentence of why,
+  lets you override, and appends the result to `~/.cache/cc-observability/ysk-ratings.jsonl` (mode 600).
+
+### Changed
+- **The usage DB is no longer entirely content-free.** The `ysk_*` events above carry the note's text — a
+  deliberate choice, since a rating means nothing without the note it rates. They are exported and served
+  on the (PIN-gated) LAN port like every other event. All other events stay content-free.
+
+### Upgrade note
+- **Docker:** the new plugin-state mount needs its directory to exist: `mkdir -p ~/.claude/plugins/store`
+  (`scripts/rebuild.sh` does this for you). Without it, `docker compose up` stops with *"bind source path
+  does not exist"*. That is deliberate: Docker would otherwise create the directory as root inside
+  `~/.claude`, where Claude Code then couldn't write to it.
 
 ## [0.15.0] — 2026-07-20
 

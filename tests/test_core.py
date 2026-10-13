@@ -25,6 +25,7 @@ import maintenance    # noqa: E402
 import redact         # noqa: E402
 import portable       # noqa: E402
 import crypto         # noqa: E402
+import ysk            # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skill", "jaid-coach"))
 import coach_metrics  # noqa: E402
 import shutil        # noqa: E402
@@ -2932,6 +2933,138 @@ class MaintenanceEndpointTests(unittest.TestCase):
         code, body = self._post("/export", {})
         self.assertEqual(code, 400)
         self.assertEqual(body["reason"], "passphrase_required")
+
+
+class YskTests(unittest.TestCase):
+    """'You should know' plugin capture (ysk.py). Synthetic notes only — the repo is public."""
+    NOTE_A = "The widget cache is only cleared on restart, so the new setting won't apply yet."
+    NOTE_B = "The config file is read once at startup, so editing it mid-run has no effect."
+    NOTE_C = "That retry loop has no upper bound and will spin if the service stays down."
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.plugdir = os.path.join(self.dir, "store")
+        os.makedirs(self.plugdir)
+        self.ratings = os.path.join(self.dir, "ysk-ratings.jsonl")
+        self._orig_store, server._store = server._store, store.Store(os.path.join(self.dir, "u.db"))
+        server._ysk_ratings_sig = None
+
+    def tearDown(self):
+        server._store.close()
+        server._store = self._orig_store
+        server._ysk_ratings_sig = None
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def prompt(self, tag, note):
+        return f"{ysk.TAKEN_MARK}\n\n> {tag} · {note}\n>\n> A synthetic explanation follows the note."
+
+    def write_state(self, seen, known=(), view=None):
+        sessions = [{"id": "sess-1", "tag": "Heads up"}]
+        if view:
+            sessions[0]["view"] = {"line": view[0], "kind": "offer", "explanation": "", "shownAt": view[1]}
+        with open(os.path.join(self.plugdir, "cc-plugin-you-should-know_builtin-abc123.json"), "w") as fh:
+            json.dump({"seen": list(seen), "known": list(known), "sessions": sessions}, fh)
+
+    def evs(self, type_):
+        return [(r["event_id"], r["ts"], r["session_id"], json.loads(r["payload_json"])) for r in
+                server._store._all("SELECT * FROM events WHERE type=? ORDER BY event_id", (type_,))]
+
+    def test_parse_taken_prompt(self):
+        p = ysk.parse_taken_prompt(self.prompt("Heads up", self.NOTE_A))
+        self.assertEqual((p["tag"], p["note"]), ("Heads up", self.NOTE_A))
+        self.assertEqual(p["note_key"], ysk.note_key(self.NOTE_A))
+        self.assertIsNone(ysk.parse_taken_prompt("please summarize: " + ysk.TAKEN_MARK))   # must START with it
+        self.assertIsNone(ysk.parse_taken_prompt(ysk.TAKEN_MARK + "\n\nno quoted line"))
+        self.assertIsNone(ysk.parse_taken_prompt(None))
+        self.assertEqual(ysk.parse_taken_prompt(ysk.TAKEN_MARK + "\n> untagged note")["tag"], None)
+        self.assertEqual(ysk.note_key("a  b\n c"), ysk.note_key("a b c"))   # whitespace-normalized join key
+
+    def test_prompt_taken_events_string_and_block_only_real_prompts(self):
+        line = lambda uuid, typ, content: json.dumps({"uuid": uuid, "sessionId": "S", "type": typ,  # noqa: E731
+                                                      "timestamp": "2026-01-01T12:00:00Z", "message": {"content": content}})
+        lines = [
+            line("u1", "user", self.prompt("Heads up", self.NOTE_A)),                      # how 2.1.296 stores it
+            line("u2", "user", [{"type": "text", "text": self.prompt("You should know", self.NOTE_B)}]),
+            line("u3", "user", [{"type": "tool_result", "tool_use_id": "t1", "content": self.prompt("x", "y")}]),
+            line("u4", "assistant", [{"type": "text", "text": self.prompt("x", "y")}]),
+        ]
+        self.assertEqual(server._store.ingest_event_lines(lines, host="h"), 2)
+        self.assertEqual(server._store.ingest_event_lines(lines + lines[:1], host="h"), 0)   # same uuid twice → once
+        got = {p["note"]: (sid, p["tag"]) for _, _, sid, p in self.evs("ysk_prompt_taken")}
+        self.assertEqual(got, {self.NOTE_A: ("S", "Heads up"), self.NOTE_B: ("S", "You should know")})
+
+    def test_state_events_shownat_backfill_and_resolved(self):
+        st = {"seen": [self.NOTE_A, self.NOTE_B], "known": [self.NOTE_A],
+              "sessions": [{"id": "S", "tag": "Heads up", "view": {"line": self.NOTE_B, "shownAt": 1767225600000}}]}
+        rows = ysk.state_events(st, host="h", now=1767226100.0, backfill=True)
+        by = {r["event_id"]: (r["type"], r["ts"], r["session_id"], json.loads(r["payload_json"])) for r in rows}
+        a, b = by["ysk:shown:" + ysk.note_key(self.NOTE_A)], by["ysk:shown:" + ysk.note_key(self.NOTE_B)]
+        self.assertEqual((a[1], a[2], a[3]["ts_source"]), (1767226100.0, None, "backfill"))
+        self.assertEqual((b[1], b[2], b[3]["tag"], b[3]["ts_source"]), (1767225600.0, "S", "Heads up", "shownAt"))
+        self.assertEqual(by["ysk:resolved:" + ysk.note_key(self.NOTE_A)][0], "ysk_resolved")
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(ysk.state_events(None), [])
+        self.assertEqual(ysk.state_events({"seen": [None, "", 5], "sessions": ["bad"]}), [])   # fails soft
+
+    def test_rating_events_skip_malformed(self):
+        good = json.dumps({"ts": "2026-01-01T12:00:00Z", "session_id": "S", "tag": "Heads up", "note": self.NOTE_A,
+                           "checks": {"true": True, "new": True, "matters": True, "timely": True, "acted": False},
+                           "verdict": "GOOD", "why": "Would have shipped a stale setting."})
+        bad = [json.dumps({"note": self.NOTE_A, "verdict": "AMAZING"}), json.dumps({"verdict": "BAD"}), "{not json", ""]
+        rows = ysk.rating_events([good] + bad, host="h")
+        self.assertEqual(len(rows), 1)
+        p = json.loads(rows[0]["payload_json"])
+        self.assertEqual((p["verdict"], p["note_key"], p["checks"]["acted"]), ("GOOD", ysk.note_key(self.NOTE_A), False))
+        self.assertEqual(rows[0]["ts"], datetime(2026, 1, 1, 12, tzinfo=timezone.utc).timestamp())
+        self.assertEqual(ysk._ts(1767225600000), 1767225600.0)   # epoch ms
+        self.assertIsNone(ysk._ts("yesterday"))
+
+    def test_ysk_poll_end_to_end(self):
+        poll = lambda **kw: server.ysk_poll(host="h", store_dir=self.plugdir, ratings_path=self.ratings, **kw)  # noqa: E731
+        self.assertEqual(poll(), 0)                                   # no state file, no ratings file yet
+        self.write_state([self.NOTE_A, self.NOTE_B], known=[self.NOTE_A])
+        self.assertEqual(poll(now=100.0), 3)
+        self.assertEqual({p["ts_source"] for *_, p in self.evs("ysk_shown")}, {"backfill"})   # first read = backfill
+        self.assertEqual(poll(now=200.0), 0)                          # unchanged file → idempotent
+        # a new note appears on screen → its real shownAt + session + tag; later it is answered → resolved
+        self.write_state([self.NOTE_A, self.NOTE_B, self.NOTE_C], known=[self.NOTE_A], view=(self.NOTE_C, 300000))
+        self.assertEqual(poll(now=400.0), 1)
+        c = [e for e in self.evs("ysk_shown") if e[3]["note"] == self.NOTE_C][0]
+        self.assertEqual((c[1], c[2], c[3]["tag"], c[3]["ts_source"]), (300.0, "sess-1", "Heads up", "shownAt"))
+        self.write_state([self.NOTE_A, self.NOTE_B, self.NOTE_C], known=[self.NOTE_A, self.NOTE_C])
+        self.assertEqual(poll(now=500.0), 1)
+        self.assertEqual([e[1] for e in self.evs("ysk_resolved") if e[3]["note"] == self.NOTE_C], [500.0])
+        # ratings: an appended line → one event; an unchanged file isn't re-parsed; it joins the shown note by key
+        with open(self.ratings, "a") as fh:
+            fh.write(json.dumps({"ts": 600, "note": self.NOTE_C, "verdict": "MEH", "why": "knew it"}) + "\n")
+        self.assertEqual(poll(), 1)
+        self.assertEqual(poll(), 0)
+        self.assertEqual(self.evs("ysk_rating")[0][3]["note_key"], c[3]["note_key"])
+        self.assertEqual(server._store.get_meta("ysk_state_backfill_v1"), "done")
+
+    def test_rate_skill_helper_round_trips_into_ingest(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("ysk_rate", os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skill", "ysk-rate", "rate.py"))
+        rate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rate)
+        rate.STORE_DIR, rate.RATINGS = self.plugdir, self.ratings
+        self.assertIsNone(rate.latest())                                       # no state file → nothing to rate
+        self.write_state([self.NOTE_A, self.NOTE_B])
+        self.assertEqual((rate.latest()["note"], rate.latest()["source"]), (self.NOTE_B, "newest shown"))
+        self.write_state([self.NOTE_A, self.NOTE_B], view=(self.NOTE_A, 5000))
+        self.assertEqual((rate.latest("sess-1")["note"], rate.latest()["tag"]), (self.NOTE_A, "Heads up"))
+        ok = {"session_id": "${CLAUDE_SESSION_ID}", "tag": "Heads up", "note": self.NOTE_A + ' "quoted"', "verdict": "GOOD",
+              "why": "saved a redeploy", "checks": {c: True for c in rate.CHECKS}}
+        self.assertIsNotNone(rate.append(dict(ok, verdict="GREAT"))[1])        # off-rubric verdict rejected
+        self.assertIsNotNone(rate.append(dict(ok, checks={"true": True}))[1])  # all five checks required
+        line, err = rate.append(ok)
+        self.assertIsNone(err)
+        self.assertIsNone(json.loads(line)["session_id"])                     # unsubstituted placeholder → null
+        self.assertEqual(stat.S_IMODE(os.stat(self.ratings).st_mode), 0o600)  # holds note text
+        with open(self.ratings) as fh:
+            rows = ysk.rating_events(fh, host="h")
+        self.assertEqual([json.loads(r["payload_json"])["note"] for r in rows], [self.NOTE_A + ' "quoted"'])
 
 
 if __name__ == "__main__":

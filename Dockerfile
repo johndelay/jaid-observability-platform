@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir numpy cryptography
 ARG CC_BUILD=""
 
 WORKDIR /app
-COPY server.py watcher.py costing.py store.py craft.py medals.py coach.py content_index.py version.py maintenance.py redact.py portable.py crypto.py fsperms.py ./
+COPY server.py watcher.py costing.py store.py craft.py medals.py coach.py content_index.py version.py maintenance.py redact.py portable.py crypto.py fsperms.py ysk.py ./
 COPY web ./web
 
 # Single self-contained process: serve the dashboard AND scan local transcripts in-process.
@@ -25,6 +25,7 @@ ENV CC_BUILD=$CC_BUILD \
     CC_LOCAL_SCAN=1 \
     CC_PROJECTS_DIR=/data/projects \
     CC_STATE_DIR=/data/state \
+    CC_YSK_STORE_DIR=/data/plugin-store \
     CC_WINDOW_1M_MODELS=claude-opus-4-8
 
 EXPOSE 8099 8100

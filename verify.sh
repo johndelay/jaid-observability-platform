@@ -36,7 +36,7 @@ else
 fi
 
 sec "Syntax"
-python3 -m py_compile server.py watcher.py coach.py coach_worker.py content_index.py store.py version.py maintenance.py redact.py portable.py crypto.py && echo "  PASS py_compile" || FAIL=$((FAIL+1))
+python3 -m py_compile server.py watcher.py coach.py coach_worker.py content_index.py store.py version.py maintenance.py redact.py portable.py crypto.py ysk.py && echo "  PASS py_compile" || FAIL=$((FAIL+1))
 bash -n hooks/cc-statusline.sh && echo "  PASS statusline syntax" || FAIL=$((FAIL+1))
 bash -n scripts/check-release-ready.sh && bash -n scripts/rebuild.sh && echo "  PASS release-script syntax" || FAIL=$((FAIL+1))
 # Runs the release gate's own regression suite, NOT the live gate. The live gate is a release-time step

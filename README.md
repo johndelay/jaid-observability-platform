@@ -70,6 +70,7 @@ dashboard. One process: `server.py` with `CC_LOCAL_SCAN=1` scans `~/.claude/proj
 
 ```bash
 mkdir -p ~/.cache/cc-dashboard   # state-snapshot mount target — must exist before the first `up`
+mkdir -p ~/.claude/plugins/store # "You should know" plugin-state mount target — must exist too
 cp .env.sample .env              # set CC_HOST to this machine's name
 docker compose up -d --build
 # open http://<this-host>:8099   (my-desktop = http://localhost:8099)

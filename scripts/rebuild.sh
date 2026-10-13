@@ -31,4 +31,8 @@ else
 fi
 export CC_BUILD
 
+# The "You should know" plugin-state mount refuses to create its source (Docker would make it root-owned inside
+# ~/.claude). Create it as you — harmless: it is the directory Claude Code itself uses.
+mkdir -p "${CC_YSK_STORE_DIR_HOST:-$HOME/.claude/plugins/store}"
+
 docker compose up -d --build --force-recreate
