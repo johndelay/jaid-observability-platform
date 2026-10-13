@@ -23,8 +23,15 @@ This is a curated, user-facing log — for the full commit history see the Git l
   history), and each **rating** you give one. All four share a `note_key`, so a note can be followed from
   shown → taken → rated. Shown times are exact only for a note still on screen when JAID polls; notes the
   plugin had already recorded before the first read are marked `backfill` instead of being given a time
-  they don't have. The plugin's own checks never appear in transcripts, so this measures what it *said*, not
-  what it *cost*. No dashboard view yet.
+  they don't have. The plugin's own checks never appear in transcripts; what they *cost* comes from the debug
+  log (next entry). No dashboard view yet.
+- **"You should know" cost.** The plugin's side agent never reaches transcripts, but Claude Code's **debug
+  log** records each of its calls with token usage — when you start `claude --debug`. JAID reads only those
+  lines (from `~/.claude/debug`, mounted read-only, appended lines only) and records each call as a `ysk_fork`
+  event: model, tokens, latency and cost at that model's rates. The plugin uses the same call for its checks
+  and its *Learn more* explanations; with `CLAUDE_CODE_YOU_SHOULD_KNOW_DEBUG=1` it also records each check and
+  its outcome, which JAID captures as `ysk_check`, so the two can be told apart. Debug logs grow large and hold
+  file paths and hook output — turn them on while you need them, not for good. No text is recorded from them.
 - **`ysk-rate` skill** (`skill/ysk-rate/`). Ask Claude to *"rate that note"*: it first asks **you** the two
   checks only you can answer — was it **new** to you, and did you **act** on it — then judges the other three
   (true · matters · timely), proposes GOOD / MEH / BAD with one sentence of why, lets you override, and
@@ -38,9 +45,9 @@ This is a curated, user-facing log — for the full commit history see the Git l
   on the (PIN-gated) LAN port like every other event. All other events stay content-free.
 
 ### Upgrade note
-- **Docker:** the new plugin-state mount needs its directory to exist: `mkdir -p ~/.claude/plugins/store`
-  (`scripts/rebuild.sh` does this for you). Without it, `docker compose up` stops with *"bind source path
-  does not exist"*. That is deliberate: Docker would otherwise create the directory as root inside
+- **Docker:** the new plugin-state and debug-log mounts need their directories to exist:
+  `mkdir -p ~/.claude/plugins/store ~/.claude/debug` (`scripts/rebuild.sh` does this for you). Without them,
+  `docker compose up` stops with *"bind source path does not exist"*. That is deliberate: Docker would otherwise create the directory as root inside
   `~/.claude`, where Claude Code then couldn't write to it.
 
 ## [0.15.0] — 2026-07-20

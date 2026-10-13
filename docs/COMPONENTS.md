@@ -169,8 +169,12 @@ judge whether it earns its cost: notes **shown** and **answered** (from the plug
 **ratings**. To rate a note, link the skill once — `ln -s "$PWD/skill/ysk-rate" ~/.claude/skills/ysk-rate` — then
 ask Claude to *"rate that note"*; it appends to `~/.cache/cc-observability/ysk-ratings.jsonl`, which the
 dashboard reads. ⚠️ These are the only events that carry **text** (the note itself), so they travel with exports.
-The plugin's checks never reach transcripts, so this measures **value, not cost**. Nothing happens if the plugin
-is off. Collector host only — remote watchers send token counts, never note text.
+**Cost:** the plugin's calls never reach transcripts, only Claude Code's **debug log** — start `claude --debug`
+(logs land in `~/.claude/debug`, which Docker mounts read-only) and each call becomes a `ysk_fork` event with its
+model, tokens and cost. Add `CLAUDE_CODE_YOU_SHOULD_KNOW_DEBUG=1` to also get each check and its outcome
+(`ysk_check`), which separates checks from *Learn more* calls. Debug logs grow large and hold paths and hook
+output — turn them on while you need them, then delete them. Nothing happens if the plugin is off. Collector
+host only — remote watchers send token counts, never note text.
 
 ---
 

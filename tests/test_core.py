@@ -2946,14 +2946,43 @@ class YskTests(unittest.TestCase):
         self.plugdir = os.path.join(self.dir, "store")
         os.makedirs(self.plugdir)
         self.ratings = os.path.join(self.dir, "ysk-ratings.jsonl")
+        self.debugdir = os.path.join(self.dir, "debug")   # never the real ~/.claude/debug
+        os.makedirs(self.debugdir)
         self._orig_store, server._store = server._store, store.Store(os.path.join(self.dir, "u.db"))
         server._ysk_ratings_sig = None
+        server._ysk_debug_cursors.clear()
 
     def tearDown(self):
         server._store.close()
         server._store = self._orig_store
         server._ysk_ratings_sig = None
+        server._ysk_debug_cursors.clear()
         shutil.rmtree(self.dir, ignore_errors=True)
+
+    SID = "00000000-0000-4000-8000-000000000001"
+
+    @staticmethod
+    def dbg(sec, msg):
+        """One synthetic Claude Code debug-log line (2.1.296 shape)."""
+        return f"2026-01-01T00:00:{sec:02d}.500Z [DEBUG] {msg}"
+
+    def fork_lines(self):
+        fin = "Forked agent [plugin_model_fork] finished: 1 messages, types=[assistant], totalUsage: "
+        return [
+            self.dbg(1, "[engine] send set_model model=claude-sonnet-5-5"),
+            self.dbg(2, "[API:timing] dispatching to firstParty model=claude-haiku-5-5"),    # a background call
+            self.dbg(3, "[API:timing] dispatching to firstParty model=claude-opus-5-5"),
+            self.dbg(3, "[API REQUEST] /v1/messages x-client-request-id=r1 source=hook_prompt"),
+            self.dbg(4, fin + "input=1000 output=10 cacheRead=5000 cacheCreate=20"),
+            self.dbg(4, "$.model.fork (cc-plugin-you-should-know): 1500ms, 1 replies"),
+            self.dbg(5, fin + "input=7 output=7 cacheRead=7 cacheCreate=7"),               # another mod's fork
+            self.dbg(5, "$.model.fork (cc-plugin-other): 900ms, 1 replies"),
+            self.dbg(6, "$.fs.ancestors (cc-plugin-other): 1ms"),                       # not a fork line
+            self.dbg(7, "[API:timing] dispatching to firstParty model=claude-sonnet-5-5"),
+            self.dbg(7, "[API REQUEST] /v1/messages x-client-request-id=r2 source=hook_prompt"),
+            self.dbg(8, fin + "input=2000 output=300 cacheRead=0 cacheCreate=0"),
+            self.dbg(8, "$.model.fork (cc-plugin-you-should-know): 4000ms, 1 replies"),
+        ]
 
     def prompt(self, tag, note):
         return f"{ysk.TAKEN_MARK}\n\n> {tag} · {note}\n>\n> A synthetic explanation follows the note."
@@ -3019,8 +3048,68 @@ class YskTests(unittest.TestCase):
         self.assertEqual(ysk._ts(1767225600000), 1767225600.0)   # epoch ms
         self.assertIsNone(ysk._ts("yesterday"))
 
+    def test_fork_events_pair_price_and_carry_across_chunks(self):
+        lines = self.fork_lines()
+        rows = ysk.fork_events(lines, host="h", session_id="S", log="S.txt")
+        self.assertEqual(len(rows), 2)                                   # the other mod's fork is dropped
+        p = [json.loads(r["payload_json"]) for r in rows]
+        self.assertEqual((p[0]["model"], p[0]["input"], p[0]["cache_read"], p[0]["ms"]), ("claude-opus-5-5", 1000, 5000, 1500))
+        self.assertEqual(p[0]["cost_usd"], round(costing.reprice("claude-opus-5-5", 1000, 10, 5000, 20), 6))
+        self.assertGreater(p[0]["cost_usd"], 0)                          # a real model, not a silent $0
+        self.assertEqual((p[1]["model"], p[1]["output"], rows[1]["ref"]), ("claude-sonnet-5-5", 300, "claude-sonnet-5-5"))
+        self.assertEqual((rows[0]["type"], rows[0]["session_id"]), ("ysk_fork", "S"))
+        self.assertEqual(rows[0]["ts"], datetime(2026, 1, 1, 0, 0, 4, 500000, tzinfo=timezone.utc).timestamp())
+        self.assertEqual([r["event_id"] for r in ysk.fork_events(lines, log="S.txt")], [r["event_id"] for r in rows])
+        # read in two chunks split between a "finished" line and its plugin line → still paired, same ids
+        st = {}
+        a = ysk.fork_events(lines[:5], log="S.txt", state=st)
+        b = ysk.fork_events(lines[5:], log="S.txt", state=st)
+        self.assertEqual([r["event_id"] for r in a + b], [r["event_id"] for r in rows])
+        # no model ever logged → no price, not a guess
+        bare = ysk.fork_events([lines[4], lines[5]], log="x")
+        self.assertEqual((json.loads(bare[0]["payload_json"])["model"], json.loads(bare[0]["payload_json"])["cost_usd"]),
+                         (None, None))
+
+    def test_debug_fork_events_reads_only_new_complete_lines(self):
+        cur, path = {}, os.path.join(self.debugdir, self.SID + ".txt")
+        lines = self.fork_lines()
+        with open(path, "w") as fh:
+            fh.write("\n".join(lines[:4]) + "\n" + lines[4][:60])        # a "finished" line still being written
+        os.symlink(path, os.path.join(self.debugdir, "latest"))          # Claude Code's pointer (no extension)
+        os.symlink(path, os.path.join(self.debugdir, "alias.txt"))       # any symlink — must not double count
+        with open(os.path.join(self.debugdir, "notes.md"), "w") as fh:
+            fh.write("\n".join(lines) + "\n")                            # not a debug log
+        self.assertEqual(ysk.debug_fork_events(self.debugdir, cur, host="h"), [])   # half a line is not read
+        with open(path, "a") as fh:
+            fh.write(lines[4][60:] + "\n" + "\n".join(lines[5:9]) + "\n")
+        rows = ysk.debug_fork_events(self.debugdir, cur, host="h")
+        self.assertEqual([(r["session_id"], json.loads(r["payload_json"])["log"], json.loads(r["payload_json"])["input"])
+                          for r in rows], [(self.SID, self.SID + ".txt", 1000)])
+        self.assertEqual(ysk.debug_fork_events(self.debugdir, cur), [])  # nothing appended → nothing read
+        with open(path, "a") as fh:
+            fh.write("\n".join(lines[9:]) + "\n")
+        rows2 = ysk.debug_fork_events(self.debugdir, cur, host="h")
+        self.assertEqual([json.loads(r["payload_json"])["output"] for r in rows2], [300])
+        with open(path, "w") as fh:                                      # replaced by a shorter file → start over
+            fh.write("\n".join(lines[:6]) + "\n")
+        self.assertEqual([r["event_id"] for r in ysk.debug_fork_events(self.debugdir, cur)], [rows[0]["event_id"]])
+        self.assertEqual(ysk.debug_fork_events(os.path.join(self.dir, "missing")), [])
+
+    def test_state_check_events_with_plugin_debug_switch(self):
+        ok = {"number": 7, "step": 12, "outcome": "none", "latencyMs": 1600, "at": 1767225600000}
+        st = {"seen": [], "sessions": [
+            {"id": "S", "checked": 8, "checks": [ok, dict(ok, number=8, outcome="shown", at=1767225660000),
+                                                 dict(ok, number=None), dict(ok, outcome=5), "junk"]},
+            {"id": "T"}, {"checks": [ok]}]}                              # no checks / no id → nothing
+        rows = ysk.state_events(st, host="h", now=1.0)
+        self.assertEqual([(r["event_id"], r["type"], r["ts"], r["ref"]) for r in rows],
+                         [("ysk:check:S:7", "ysk_check", 1767225600.0, "none"),
+                          ("ysk:check:S:8", "ysk_check", 1767225660.0, "shown")])
+        self.assertEqual(json.loads(rows[0]["payload_json"]), {"number": 7, "step": 12, "outcome": "none", "latency_ms": 1600})
+
     def test_ysk_poll_end_to_end(self):
-        poll = lambda **kw: server.ysk_poll(host="h", store_dir=self.plugdir, ratings_path=self.ratings, **kw)  # noqa: E731
+        poll = lambda **kw: server.ysk_poll(host="h", store_dir=self.plugdir, ratings_path=self.ratings,  # noqa: E731
+                                            debug_dir=self.debugdir, **kw)
         self.assertEqual(poll(), 0)                                   # no state file, no ratings file yet
         self.write_state([self.NOTE_A, self.NOTE_B], known=[self.NOTE_A])
         self.assertEqual(poll(now=100.0), 3)
@@ -3041,6 +3130,12 @@ class YskTests(unittest.TestCase):
         self.assertEqual(poll(), 0)
         self.assertEqual(self.evs("ysk_rating")[0][3]["note_key"], c[3]["note_key"])
         self.assertEqual(server._store.get_meta("ysk_state_backfill_v1"), "done")
+        # a debug log appears → its plugin calls land as ysk_fork, once
+        with open(os.path.join(self.debugdir, self.SID + ".txt"), "w") as fh:
+            fh.write("\n".join(self.fork_lines()) + "\n")
+        self.assertEqual(poll(), 2)
+        self.assertEqual(poll(), 0)
+        self.assertEqual({sid for _, _, sid, _ in self.evs("ysk_fork")}, {self.SID})
 
     def test_rate_skill_helper_round_trips_into_ingest(self):
         import importlib.util

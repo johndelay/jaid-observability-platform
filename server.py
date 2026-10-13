@@ -1630,11 +1630,13 @@ def local_scan_loop():
 
 
 _ysk_ratings_sig = None   # (mtime, size) of the ratings file at its last read — skip re-parsing an unchanged file
+_ysk_debug_cursors = {}   # debug-log path → byte offset + parse state, so each pass reads only what was appended
 
 
-def ysk_poll(host=None, now=None, store_dir=None, ratings_path=None):
-    """One pass of the "You should know" capture (ysk.py): the plugin's state file → ysk_shown/ysk_resolved,
-    the ratings file → ysk_rating. Idempotent (stable event_ids). The FIRST successful read of a state file is
+def ysk_poll(host=None, now=None, store_dir=None, ratings_path=None, debug_dir=None):
+    """One pass of the "You should know" capture (ysk.py): the plugin's state file → ysk_shown/ysk_resolved
+    (+ ysk_check when its debug switch is on), Claude Code's debug logs → ysk_fork (what each call cost), the
+    ratings file → ysk_rating. Idempotent (stable event_ids). The FIRST successful read of a state file is
     flagged as a backfill — those notes were shown at unknown earlier times. Returns events inserted."""
     global _ysk_ratings_sig
     if _store is None:
@@ -1647,6 +1649,7 @@ def ysk_poll(host=None, now=None, store_dir=None, ratings_path=None):
         n += _store.record_events(ysk.state_events(st, host=host, now=now, backfill=first))
         if first:
             _store.set_meta("ysk_state_backfill_v1", "done")
+    n += _store.record_events(ysk.debug_fork_events(debug_dir, _ysk_debug_cursors, host=host))
     path = ratings_path or YSK_RATINGS_PATH or os.path.join(os.path.dirname(_store.path), "ysk-ratings.jsonl")
     try:
         sig = (os.path.getmtime(path), os.path.getsize(path))

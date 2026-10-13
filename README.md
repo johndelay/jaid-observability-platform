@@ -71,6 +71,7 @@ dashboard. One process: `server.py` with `CC_LOCAL_SCAN=1` scans `~/.claude/proj
 ```bash
 mkdir -p ~/.cache/cc-dashboard   # state-snapshot mount target — must exist before the first `up`
 mkdir -p ~/.claude/plugins/store # "You should know" plugin-state mount target — must exist too
+mkdir -p ~/.claude/debug         # Claude Code debug-log mount target (that plugin's call costs) — must exist too
 cp .env.sample .env              # set CC_HOST to this machine's name
 docker compose up -d --build
 # open http://<this-host>:8099   (my-desktop = http://localhost:8099)
@@ -79,8 +80,10 @@ docker compose up -d --build
 > First load looks empty? That's expected until Claude Code has actually run on this host — the
 > dashboard reads `~/.claude/projects`, so it fills in as you use Claude Code (nothing to configure).
 
-> Only `~/.claude/projects` is mounted, **read-only** — not all of `~/.claude` (that holds
-> credentials). The container can't see the real hostname, so set `CC_HOST` in `.env`.
+> Only `~/.claude/projects`, `~/.claude/plugins/store` and `~/.claude/debug` are mounted, all **read-only** —
+> not all of `~/.claude` (that holds credentials). The container can read every plugin's state file in
+> `plugins/store` and whole debug logs, but parses only the "You should know" file and two debug-line types.
+> The container can't see the real hostname, so set `CC_HOST` in `.env`.
 
 ## Run it (native, no Docker)
 

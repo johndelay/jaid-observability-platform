@@ -42,6 +42,14 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      # Claude Code debug logs → ysk_fork events (what each of that plugin's side-agent calls cost). Written only
+      # while you start `claude --debug`; only two line types are read. Same create_host_path rule as above.
+      - type: bind
+        source: ${CC_DEBUG_DIR_HOST:-${HOME}/.claude/debug}
+        target: /data/claude-debug
+        read_only: true
+        bind:
+          create_host_path: false
       - "${CC_DB_DIR:-${HOME}/.cache/cc-observability}:/data/db"   # rw — usage/cost history DB (SQLite)
       # rw — export bundles land here (encrypted by default). User-accessible on the host + SyncThing-carryable.
       - "${CC_EXPORT_DIR_HOST:-${HOME}/cc-observability-exports}:/data/exports"

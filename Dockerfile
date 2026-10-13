@@ -26,6 +26,7 @@ ENV CC_BUILD=$CC_BUILD \
     CC_PROJECTS_DIR=/data/projects \
     CC_STATE_DIR=/data/state \
     CC_YSK_STORE_DIR=/data/plugin-store \
+    CC_YSK_DEBUG_DIR=/data/claude-debug \
     CC_WINDOW_1M_MODELS=claude-opus-4-8
 
 EXPOSE 8099 8100
