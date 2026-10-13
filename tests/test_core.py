@@ -25,6 +25,7 @@ import maintenance    # noqa: E402
 import redact         # noqa: E402
 import portable       # noqa: E402
 import crypto         # noqa: E402
+import ysk            # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skill", "jaid-coach"))
 import coach_metrics  # noqa: E402
 import shutil        # noqa: E402
@@ -2932,6 +2933,240 @@ class MaintenanceEndpointTests(unittest.TestCase):
         code, body = self._post("/export", {})
         self.assertEqual(code, 400)
         self.assertEqual(body["reason"], "passphrase_required")
+
+
+class YskTests(unittest.TestCase):
+    """'You should know' plugin capture (ysk.py). Synthetic notes only — the repo is public."""
+    NOTE_A = "The widget cache is only cleared on restart, so the new setting won't apply yet."
+    NOTE_B = "The config file is read once at startup, so editing it mid-run has no effect."
+    NOTE_C = "That retry loop has no upper bound and will spin if the service stays down."
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.plugdir = os.path.join(self.dir, "store")
+        os.makedirs(self.plugdir)
+        self.ratings = os.path.join(self.dir, "ysk-ratings.jsonl")
+        self.debugdir = os.path.join(self.dir, "debug")   # never the real ~/.claude/debug
+        os.makedirs(self.debugdir)
+        self._orig_store, server._store = server._store, store.Store(os.path.join(self.dir, "u.db"))
+        server._ysk_ratings_sig = None
+        server._ysk_debug_cursors.clear()
+
+    def tearDown(self):
+        server._store.close()
+        server._store = self._orig_store
+        server._ysk_ratings_sig = None
+        server._ysk_debug_cursors.clear()
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    SID = "00000000-0000-4000-8000-000000000001"
+
+    @staticmethod
+    def dbg(sec, msg):
+        """One synthetic Claude Code debug-log line (2.1.296 shape)."""
+        return f"2026-01-01T00:00:{sec:02d}.500Z [DEBUG] {msg}"
+
+    def fork_lines(self):
+        fin = "Forked agent [plugin_model_fork] finished: 1 messages, types=[assistant], totalUsage: "
+        return [
+            self.dbg(1, "[engine] send set_model model=claude-sonnet-5-5"),
+            self.dbg(2, "[API:timing] dispatching to firstParty model=claude-haiku-5-5"),    # a background call
+            self.dbg(3, "[API:timing] dispatching to firstParty model=claude-opus-5-5"),
+            self.dbg(3, "[API REQUEST] /v1/messages x-client-request-id=r1 source=hook_prompt"),
+            self.dbg(4, fin + "input=1000 output=10 cacheRead=5000 cacheCreate=20"),
+            self.dbg(4, "$.model.fork (cc-plugin-you-should-know): 1500ms, 1 replies"),
+            self.dbg(5, fin + "input=7 output=7 cacheRead=7 cacheCreate=7"),               # another mod's fork
+            self.dbg(5, "$.model.fork (cc-plugin-other): 900ms, 1 replies"),
+            self.dbg(6, "$.fs.ancestors (cc-plugin-other): 1ms"),                       # not a fork line
+            self.dbg(7, "[API:timing] dispatching to firstParty model=claude-sonnet-5-5"),
+            self.dbg(7, "[API REQUEST] /v1/messages x-client-request-id=r2 source=hook_prompt"),
+            self.dbg(8, fin + "input=2000 output=300 cacheRead=0 cacheCreate=0"),
+            self.dbg(8, "$.model.fork (cc-plugin-you-should-know): 4000ms, 1 replies"),
+        ]
+
+    def prompt(self, tag, note):
+        return f"{ysk.TAKEN_MARK}\n\n> {tag} · {note}\n>\n> A synthetic explanation follows the note."
+
+    def write_state(self, seen, known=(), view=None):
+        sessions = [{"id": "sess-1", "tag": "Heads up"}]
+        if view:
+            sessions[0]["view"] = {"line": view[0], "kind": "offer", "explanation": "", "shownAt": view[1]}
+        with open(os.path.join(self.plugdir, "cc-plugin-you-should-know_builtin-abc123.json"), "w") as fh:
+            json.dump({"seen": list(seen), "known": list(known), "sessions": sessions}, fh)
+
+    def evs(self, type_):
+        return [(r["event_id"], r["ts"], r["session_id"], json.loads(r["payload_json"])) for r in
+                server._store._all("SELECT * FROM events WHERE type=? ORDER BY event_id", (type_,))]
+
+    def test_parse_taken_prompt(self):
+        p = ysk.parse_taken_prompt(self.prompt("Heads up", self.NOTE_A))
+        self.assertEqual((p["tag"], p["note"]), ("Heads up", self.NOTE_A))
+        self.assertEqual(p["note_key"], ysk.note_key(self.NOTE_A))
+        self.assertIsNone(ysk.parse_taken_prompt("please summarize: " + ysk.TAKEN_MARK))   # must START with it
+        self.assertIsNone(ysk.parse_taken_prompt(ysk.TAKEN_MARK + "\n\nno quoted line"))
+        self.assertIsNone(ysk.parse_taken_prompt(None))
+        self.assertEqual(ysk.parse_taken_prompt(ysk.TAKEN_MARK + "\n> untagged note")["tag"], None)
+        self.assertEqual(ysk.note_key("a  b\n c"), ysk.note_key("a b c"))   # whitespace-normalized join key
+
+    def test_prompt_taken_events_string_and_block_only_real_prompts(self):
+        line = lambda uuid, typ, content: json.dumps({"uuid": uuid, "sessionId": "S", "type": typ,  # noqa: E731
+                                                      "timestamp": "2026-01-01T12:00:00Z", "message": {"content": content}})
+        lines = [
+            line("u1", "user", self.prompt("Heads up", self.NOTE_A)),                      # how 2.1.296 stores it
+            line("u2", "user", [{"type": "text", "text": self.prompt("You should know", self.NOTE_B)}]),
+            line("u3", "user", [{"type": "tool_result", "tool_use_id": "t1", "content": self.prompt("x", "y")}]),
+            line("u4", "assistant", [{"type": "text", "text": self.prompt("x", "y")}]),
+        ]
+        self.assertEqual(server._store.ingest_event_lines(lines, host="h"), 2)
+        self.assertEqual(server._store.ingest_event_lines(lines + lines[:1], host="h"), 0)   # same uuid twice → once
+        got = {p["note"]: (sid, p["tag"]) for _, _, sid, p in self.evs("ysk_prompt_taken")}
+        self.assertEqual(got, {self.NOTE_A: ("S", "Heads up"), self.NOTE_B: ("S", "You should know")})
+
+    def test_state_events_shownat_backfill_and_resolved(self):
+        st = {"seen": [self.NOTE_A, self.NOTE_B], "known": [self.NOTE_A],
+              "sessions": [{"id": "S", "tag": "Heads up", "view": {"line": self.NOTE_B, "shownAt": 1767225600000}}]}
+        rows = ysk.state_events(st, host="h", now=1767226100.0, backfill=True)
+        by = {r["event_id"]: (r["type"], r["ts"], r["session_id"], json.loads(r["payload_json"])) for r in rows}
+        a, b = by["ysk:shown:" + ysk.note_key(self.NOTE_A)], by["ysk:shown:" + ysk.note_key(self.NOTE_B)]
+        self.assertEqual((a[1], a[2], a[3]["ts_source"]), (1767226100.0, None, "backfill"))
+        self.assertEqual((b[1], b[2], b[3]["tag"], b[3]["ts_source"]), (1767225600.0, "S", "Heads up", "shownAt"))
+        self.assertEqual(by["ysk:resolved:" + ysk.note_key(self.NOTE_A)][0], "ysk_resolved")
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(ysk.state_events(None), [])
+        self.assertEqual(ysk.state_events({"seen": [None, "", 5], "sessions": ["bad"]}), [])   # fails soft
+
+    def test_rating_events_skip_malformed(self):
+        good = json.dumps({"ts": "2026-01-01T12:00:00Z", "session_id": "S", "tag": "Heads up", "note": self.NOTE_A,
+                           "checks": {"true": True, "new": True, "matters": True, "timely": True, "acted": False},
+                           "verdict": "GOOD", "why": "Would have shipped a stale setting."})
+        bad = [json.dumps({"note": self.NOTE_A, "verdict": "AMAZING"}), json.dumps({"verdict": "BAD"}), "{not json", ""]
+        rows = ysk.rating_events([good] + bad, host="h")
+        self.assertEqual(len(rows), 1)
+        p = json.loads(rows[0]["payload_json"])
+        self.assertEqual((p["verdict"], p["note_key"], p["checks"]["acted"]), ("GOOD", ysk.note_key(self.NOTE_A), False))
+        self.assertEqual(rows[0]["ts"], datetime(2026, 1, 1, 12, tzinfo=timezone.utc).timestamp())
+        self.assertEqual(ysk._ts(1767225600000), 1767225600.0)   # epoch ms
+        self.assertIsNone(ysk._ts("yesterday"))
+
+    def test_fork_events_pair_price_and_carry_across_chunks(self):
+        lines = self.fork_lines()
+        rows = ysk.fork_events(lines, host="h", session_id="S", log="S.txt")
+        self.assertEqual(len(rows), 2)                                   # the other mod's fork is dropped
+        p = [json.loads(r["payload_json"]) for r in rows]
+        self.assertEqual((p[0]["model"], p[0]["input"], p[0]["cache_read"], p[0]["ms"]), ("claude-opus-5-5", 1000, 5000, 1500))
+        self.assertEqual(p[0]["cost_usd"], round(costing.reprice("claude-opus-5-5", 1000, 10, 5000, 20), 6))
+        self.assertGreater(p[0]["cost_usd"], 0)                          # a real model, not a silent $0
+        self.assertEqual((p[1]["model"], p[1]["output"], rows[1]["ref"]), ("claude-sonnet-5-5", 300, "claude-sonnet-5-5"))
+        self.assertEqual((rows[0]["type"], rows[0]["session_id"]), ("ysk_fork", "S"))
+        self.assertEqual(rows[0]["ts"], datetime(2026, 1, 1, 0, 0, 4, 500000, tzinfo=timezone.utc).timestamp())
+        self.assertEqual([r["event_id"] for r in ysk.fork_events(lines, log="S.txt")], [r["event_id"] for r in rows])
+        # read in two chunks split between a "finished" line and its plugin line → still paired, same ids
+        st = {}
+        a = ysk.fork_events(lines[:5], log="S.txt", state=st)
+        b = ysk.fork_events(lines[5:], log="S.txt", state=st)
+        self.assertEqual([r["event_id"] for r in a + b], [r["event_id"] for r in rows])
+        # no model ever logged → no price, not a guess
+        bare = ysk.fork_events([lines[4], lines[5]], log="x")
+        self.assertEqual((json.loads(bare[0]["payload_json"])["model"], json.loads(bare[0]["payload_json"])["cost_usd"]),
+                         (None, None))
+
+    def test_debug_fork_events_reads_only_new_complete_lines(self):
+        cur, path = {}, os.path.join(self.debugdir, self.SID + ".txt")
+        lines = self.fork_lines()
+        with open(path, "w") as fh:
+            fh.write("\n".join(lines[:4]) + "\n" + lines[4][:60])        # a "finished" line still being written
+        os.symlink(path, os.path.join(self.debugdir, "latest"))          # Claude Code's pointer (no extension)
+        os.symlink(path, os.path.join(self.debugdir, "alias.txt"))       # any symlink — must not double count
+        with open(os.path.join(self.debugdir, "notes.md"), "w") as fh:
+            fh.write("\n".join(lines) + "\n")                            # not a debug log
+        self.assertEqual(ysk.debug_fork_events(self.debugdir, cur, host="h"), [])   # half a line is not read
+        with open(path, "a") as fh:
+            fh.write(lines[4][60:] + "\n" + "\n".join(lines[5:9]) + "\n")
+        rows = ysk.debug_fork_events(self.debugdir, cur, host="h")
+        self.assertEqual([(r["session_id"], json.loads(r["payload_json"])["log"], json.loads(r["payload_json"])["input"])
+                          for r in rows], [(self.SID, self.SID + ".txt", 1000)])
+        self.assertEqual(ysk.debug_fork_events(self.debugdir, cur), [])  # nothing appended → nothing read
+        with open(path, "a") as fh:
+            fh.write("\n".join(lines[9:]) + "\n")
+        rows2 = ysk.debug_fork_events(self.debugdir, cur, host="h")
+        self.assertEqual([json.loads(r["payload_json"])["output"] for r in rows2], [300])
+        with open(path, "w") as fh:                                      # replaced by a shorter file → start over
+            fh.write("\n".join(lines[:6]) + "\n")
+        self.assertEqual([r["event_id"] for r in ysk.debug_fork_events(self.debugdir, cur)], [rows[0]["event_id"]])
+        self.assertEqual(ysk.debug_fork_events(os.path.join(self.dir, "missing")), [])
+
+    def test_state_check_events_with_plugin_debug_switch(self):
+        ok = {"number": 7, "step": 12, "outcome": "none", "latencyMs": 1600, "at": 1767225600000}
+        st = {"seen": [], "sessions": [
+            {"id": "S", "checked": 8, "checks": [ok, dict(ok, number=8, outcome="shown", at=1767225660000),
+                                                 dict(ok, number=None), dict(ok, outcome=5), "junk"]},
+            {"id": "T"}, {"checks": [ok]}]}                              # no checks / no id → nothing
+        rows = ysk.state_events(st, host="h", now=1.0)
+        self.assertEqual([(r["event_id"], r["type"], r["ts"], r["ref"]) for r in rows],
+                         [("ysk:check:S:7", "ysk_check", 1767225600.0, "none"),
+                          ("ysk:check:S:8", "ysk_check", 1767225660.0, "shown")])
+        self.assertEqual(json.loads(rows[0]["payload_json"]), {"number": 7, "step": 12, "outcome": "none", "latency_ms": 1600})
+
+    def test_ysk_poll_end_to_end(self):
+        poll = lambda **kw: server.ysk_poll(host="h", store_dir=self.plugdir, ratings_path=self.ratings,  # noqa: E731
+                                            debug_dir=self.debugdir, **kw)
+        self.assertEqual(poll(), 0)                                   # no state file, no ratings file yet
+        self.write_state([self.NOTE_A, self.NOTE_B], known=[self.NOTE_A])
+        self.assertEqual(poll(now=100.0), 3)
+        self.assertEqual({p["ts_source"] for *_, p in self.evs("ysk_shown")}, {"backfill"})   # first read = backfill
+        self.assertEqual(poll(now=200.0), 0)                          # unchanged file → idempotent
+        # a new note appears on screen → its real shownAt + session + tag; later it is answered → resolved
+        self.write_state([self.NOTE_A, self.NOTE_B, self.NOTE_C], known=[self.NOTE_A], view=(self.NOTE_C, 300000))
+        self.assertEqual(poll(now=400.0), 1)
+        c = [e for e in self.evs("ysk_shown") if e[3]["note"] == self.NOTE_C][0]
+        self.assertEqual((c[1], c[2], c[3]["tag"], c[3]["ts_source"]), (300.0, "sess-1", "Heads up", "shownAt"))
+        self.write_state([self.NOTE_A, self.NOTE_B, self.NOTE_C], known=[self.NOTE_A, self.NOTE_C])
+        self.assertEqual(poll(now=500.0), 1)
+        self.assertEqual([e[1] for e in self.evs("ysk_resolved") if e[3]["note"] == self.NOTE_C], [500.0])
+        # ratings: an appended line → one event; an unchanged file isn't re-parsed; it joins the shown note by key
+        with open(self.ratings, "a") as fh:
+            fh.write(json.dumps({"ts": 600, "note": self.NOTE_C, "verdict": "MEH", "why": "knew it"}) + "\n")
+        self.assertEqual(poll(), 1)
+        self.assertEqual(poll(), 0)
+        self.assertEqual(self.evs("ysk_rating")[0][3]["note_key"], c[3]["note_key"])
+        self.assertEqual(server._store.get_meta("ysk_state_backfill_v1"), "done")
+        # a debug log appears → its plugin calls land as ysk_fork, once
+        with open(os.path.join(self.debugdir, self.SID + ".txt"), "w") as fh:
+            fh.write("\n".join(self.fork_lines()) + "\n")
+        self.assertEqual(poll(), 2)
+        self.assertEqual(poll(), 0)
+        self.assertEqual({sid for _, _, sid, _ in self.evs("ysk_fork")}, {self.SID})
+
+    def test_rate_skill_helper_round_trips_into_ingest(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("ysk_rate", os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "skill", "ysk-rate", "rate.py"))
+        rate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rate)
+        rate.STORE_DIR, rate.RATINGS = self.plugdir, self.ratings
+        self.assertIsNone(rate.latest())                                       # no state file → nothing to rate
+        self.write_state([self.NOTE_A, self.NOTE_B])
+        self.assertEqual((rate.latest()["note"], rate.latest()["source"]), (self.NOTE_B, "newest shown"))
+        self.write_state([self.NOTE_A, self.NOTE_B], view=(self.NOTE_A, 5000))
+        self.assertEqual((rate.latest("sess-1")["note"], rate.latest()["tag"]), (self.NOTE_A, "Heads up"))
+        ok = {"session_id": "${CLAUDE_SESSION_ID}", "tag": "Heads up", "note": self.NOTE_A + ' "quoted"', "verdict": "GOOD",
+              "why": "saved a redeploy", "checks": {c: True for c in rate.CHECKS}, "user_checks": ["acted", "new"]}
+        self.assertIsNotNone(rate.append(dict(ok, verdict="GREAT"))[1])        # off-rubric verdict rejected
+        self.assertIsNotNone(rate.append(dict(ok, checks={"true": True}))[1])  # all five checks required
+        # New + Acted are the USER's to answer — a rating where Claude filled them in is refused
+        for user in (None, [], ["new"], ["acted", "true"], ["new", "acted", "bogus"]):
+            self.assertIsNotNone(rate.append(dict(ok, user_checks=user))[1], user)
+        self.assertFalse(os.path.exists(self.ratings))                        # nothing rejected was written
+        line, err = rate.append(ok)
+        self.assertIsNone(err)
+        self.assertIsNone(json.loads(line)["session_id"])                     # unsubstituted placeholder → null
+        self.assertEqual(stat.S_IMODE(os.stat(self.ratings).st_mode), 0o600)  # holds note text
+        with open(self.ratings, "a") as fh:                                   # a paste-in-prompt line: no user_checks
+            fh.write(json.dumps({"note": self.NOTE_B, "verdict": "MEH", "checks": {}}) + "\n")
+        with open(self.ratings) as fh:
+            rows = [json.loads(r["payload_json"]) for r in ysk.rating_events(fh, host="h")]
+        self.assertEqual([(p["note"], p["user_checks"]) for p in rows],
+                         [(self.NOTE_A + ' "quoted"', ["new", "acted"]), (self.NOTE_B, None)])   # None = unknown
 
 
 if __name__ == "__main__":

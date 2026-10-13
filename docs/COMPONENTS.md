@@ -162,6 +162,20 @@ the container can't run either, so this native worker does it and POSTs the resu
 `CC_OLLAMA_URL` set → off. Content-free and zero-egress (your own model). Without it, the Coach scene still
 hands off to the standalone **`jaid-coach`** skill.
 
+### "You should know" capture (`ysk.py` + the `ysk-rate` skill)
+Records what Claude Code's built-in **You should know** plugin told you and what you did with it, so you can
+judge whether it earns its cost: notes **shown** and **answered** (from the plugin's state file — Docker mounts
+`~/.claude/plugins/store` read-only), notes you **took into the main session** (from transcripts), and your own
+**ratings**. To rate a note, link the skill once — `ln -s "$PWD/skill/ysk-rate" ~/.claude/skills/ysk-rate` — then
+ask Claude to *"rate that note"*; it appends to `~/.cache/cc-observability/ysk-ratings.jsonl`, which the
+dashboard reads. ⚠️ These are the only events that carry **text** (the note itself), so they travel with exports.
+**Cost:** the plugin's calls never reach transcripts, only Claude Code's **debug log** — start `claude --debug`
+(logs land in `~/.claude/debug`, which Docker mounts read-only) and each call becomes a `ysk_fork` event with its
+model, tokens and cost. Add `CLAUDE_CODE_YOU_SHOULD_KNOW_DEBUG=1` to also get each check and its outcome
+(`ysk_check`), which separates checks from *Learn more* calls. Debug logs grow large and hold paths and hook
+output — turn them on while you need them, then delete them. Nothing happens if the plugin is off. Collector
+host only — remote watchers send token counts, never note text.
+
 ---
 
 ## Layer 5 — Fleet (opt-in): watch your other machines

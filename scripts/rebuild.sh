@@ -31,4 +31,8 @@ else
 fi
 export CC_BUILD
 
+# The "You should know" plugin-state and debug-log mounts refuse to create their sources (Docker would make them
+# root-owned inside ~/.claude). Create them as you — harmless: they are the directories Claude Code itself uses.
+mkdir -p "${CC_YSK_STORE_DIR_HOST:-$HOME/.claude/plugins/store}" "${CC_DEBUG_DIR_HOST:-$HOME/.claude/debug}"
+
 docker compose up -d --build --force-recreate

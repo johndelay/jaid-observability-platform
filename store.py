@@ -22,6 +22,7 @@ import fsperms
 from datetime import date, datetime, timedelta, timezone
 
 import costing
+import ysk
 
 SESSION_GAP = 5 * 3600          # ccusage "5h block": a >5h gap starts a new block
 RATE_LOOKBACK = float(os.environ.get("CC_RATE_LOOKBACK", str(3 * 3600)))   # window for the Extra-Usage burn slope
@@ -119,9 +120,11 @@ CREATE TABLE IF NOT EXISTS session_prefs (
 );
 
 -- Discrete behavioral events mined from transcripts (the "be-better" substrate, Phase 6). type ∈
--- {compaction, skill_use, subagent_spawn, tool_error, mcp_call}. event_id is a stable key (line uuid + type + ref)
--- so re-tailing a transcript is idempotent (INSERT OR IGNORE). payload_json holds type-specific extras
+-- {compaction, skill_use, subagent_spawn, tool_error, mcp_call, ysk_*}. event_id is a stable key (line uuid + type
+-- + ref) so re-tailing a transcript is idempotent (INSERT OR IGNORE). payload_json holds type-specific extras
 -- (e.g. compaction → {trigger: manual|auto, pre_tokens, duration_ms}).
+-- ⚠️ The ysk_* events ("You should know" plugin, ysk.py) carry the NOTE TEXT in payload_json — the one deliberate
+-- exception to this DB holding no content.
 CREATE TABLE IF NOT EXISTS events (
   event_id     TEXT PRIMARY KEY,
   ts           REAL,
@@ -272,6 +275,8 @@ def extract_events(d, host=None):
       - subagent_spawn  (an `Agent` tool_use → the subagent_type)   NB: TaskCreate/TaskUpdate are todo tools, not subagents
       - tool_error      (a tool_result with is_error)
       - mcp_call        (an `mcp__<server>__<tool>` tool_use → {server, tool})   MCP tax: over-time usage / dead-weight
+      - ysk_prompt_taken (the prompt the "You should know" plugin types on "Chat in main session" → {tag, note,
+                         note_key}; see ysk.py)
     event_id = "<line uuid>:<type>:<ref>" so re-tailing the same transcript is idempotent."""
     out = []
     uuid = d.get("uuid") or ""
@@ -287,6 +292,15 @@ def extract_events(d, host=None):
                                       "pre_tokens": cm.get("preTokens"), "duration_ms": cm.get("durationMs")})
     msg = d.get("message") or {}
     content = msg.get("content") if isinstance(msg, dict) else None
+    if d.get("type") == "user":
+        # A typed prompt is a plain STRING (2.1.296) — a text block is accepted too, in case that changes.
+        # Only the prompt itself: a tool_result can quote the marker phrase, and is never a text block.
+        text = content if isinstance(content, str) else None
+        if isinstance(content, list):
+            text = next((c.get("text") for c in content if isinstance(c, dict) and c.get("type") == "text"), None)
+        taken = ysk.parse_taken_prompt(text)
+        if taken:
+            add("ysk_prompt_taken", "prompt", taken)
     if isinstance(content, list):
         for c in content:
             if not isinstance(c, dict):

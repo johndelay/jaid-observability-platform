@@ -17,6 +17,38 @@ This is a curated, user-facing log — for the full commit history see the Git l
   changelog — the second after the risk was written up in `RELEASING.md` — and a missing entry is
   invisible by construction, so this is a check rather than another warning. `manifest.json` in
   particular had no version guard at all despite being the file the update checker fetches.
+- **"You should know" capture.** Claude Code's built-in *You should know* plugin puts a one-line note above
+  the prompt during long turns. JAID now records, as events: each note **shown** and **answered** (read from
+  the plugin's state file), each note you **took into the main session** (from transcripts, back-filled from
+  history), and each **rating** you give one. All four share a `note_key`, so a note can be followed from
+  shown → taken → rated. Shown times are exact only for a note still on screen when JAID polls; notes the
+  plugin had already recorded before the first read are marked `backfill` instead of being given a time
+  they don't have. The plugin's own checks never appear in transcripts; what they *cost* comes from the debug
+  log (next entry). No dashboard view yet.
+- **"You should know" cost.** The plugin's side agent never reaches transcripts, but Claude Code's **debug
+  log** records each of its calls with token usage — when you start `claude --debug`. JAID reads only those
+  lines (from `~/.claude/debug`, mounted read-only, appended lines only) and records each call as a `ysk_fork`
+  event: model, tokens, latency and cost at that model's rates. The plugin uses the same call for its checks
+  and its *Learn more* explanations; with `CLAUDE_CODE_YOU_SHOULD_KNOW_DEBUG=1` it also records each check and
+  its outcome, which JAID captures as `ysk_check`, so the two can be told apart. Debug logs grow large and hold
+  file paths and hook output — turn them on while you need them, not for good. No text is recorded from them.
+- **`ysk-rate` skill** (`skill/ysk-rate/`). Ask Claude to *"rate that note"*: it first asks **you** the two
+  checks only you can answer — was it **new** to you, and did you **act** on it — then judges the other three
+  (true · matters · timely), proposes GOOD / MEH / BAD with one sentence of why, lets you override, and
+  appends the result to `~/.cache/cc-observability/ysk-ratings.jsonl` (mode 600). Each rating records which
+  checks you answered (`user_checks`), and the helper refuses one where *new* and *acted* weren't yours — a
+  pre-filled guess you merely didn't override would make "how often is it good" Claude's opinion, not yours.
+
+### Changed
+- **The usage DB is no longer entirely content-free.** The `ysk_*` events above carry the note's text — a
+  deliberate choice, since a rating means nothing without the note it rates. They are exported and served
+  on the (PIN-gated) LAN port like every other event. All other events stay content-free.
+
+### Upgrade note
+- **Docker:** the new plugin-state and debug-log mounts need their directories to exist:
+  `mkdir -p ~/.claude/plugins/store ~/.claude/debug` (`scripts/rebuild.sh` does this for you). Without them,
+  `docker compose up` stops with *"bind source path does not exist"*. That is deliberate: Docker would otherwise create the directory as root inside
+  `~/.claude`, where Claude Code then couldn't write to it.
 
 ## [0.15.0] — 2026-07-20
 

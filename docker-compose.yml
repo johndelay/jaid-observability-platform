@@ -5,9 +5,10 @@
 #   docker compose up -d --build
 #   open http://<this-host>:8099
 #
-# IMPORTANT: only ~/.claude/projects (transcripts) + ~/.cache/cc-dashboard (hook/statusline state)
-# are mounted — NOT all of ~/.claude (credentials). All mounts read-only.
+# IMPORTANT: only ~/.claude/projects (transcripts), ~/.claude/plugins/store (plugin state) + ~/.cache/cc-dashboard
+# (hook/statusline state) are mounted — NOT all of ~/.claude (credentials). All mounts read-only.
 # Note: ~/.cache/cc-dashboard must exist before `up` (the hooks/statusline create it; or `mkdir -p` it).
+# Note: ~/.claude/plugins/store must exist too — scripts/rebuild.sh creates it, or `mkdir -p ~/.claude/plugins/store`.
 # To also surface Claude Desktop "Cowork" sessions on THIS host, add a mount:
 #   - "${HOME}/.config/Claude/local-agent-mode-sessions:/data/cowork:ro"
 #   and set CC_PROJECTS_DIRS=/data/projects,/data/cowork
@@ -32,6 +33,23 @@ services:
     volumes:
       - "${CC_PROJECTS_DIR:-${HOME}/.claude/projects}:/data/projects:ro"
       - "${CC_STATE_DIR_HOST:-${HOME}/.cache/cc-dashboard}:/data/state:ro"
+      # "You should know" plugin state (which notes it showed / you answered) → ysk_* events. create_host_path is
+      # OFF on purpose: Docker would otherwise create a missing source as ROOT inside ~/.claude, where Claude Code
+      # then can't write. A missing dir fails `up` loudly instead — fix: mkdir -p ~/.claude/plugins/store
+      - type: bind
+        source: ${CC_YSK_STORE_DIR_HOST:-${HOME}/.claude/plugins/store}
+        target: /data/plugin-store
+        read_only: true
+        bind:
+          create_host_path: false
+      # Claude Code debug logs → ysk_fork events (what each of that plugin's side-agent calls cost). Written only
+      # while you start `claude --debug`; only two line types are read. Same create_host_path rule as above.
+      - type: bind
+        source: ${CC_DEBUG_DIR_HOST:-${HOME}/.claude/debug}
+        target: /data/claude-debug
+        read_only: true
+        bind:
+          create_host_path: false
       - "${CC_DB_DIR:-${HOME}/.cache/cc-observability}:/data/db"   # rw — usage/cost history DB (SQLite)
       # rw — export bundles land here (encrypted by default). User-accessible on the host + SyncThing-carryable.
       - "${CC_EXPORT_DIR_HOST:-${HOME}/cc-observability-exports}:/data/exports"
@@ -41,7 +59,7 @@ services:
       - CC_ACCOUNT=${CC_ACCOUNT:-}            # optional: tag this host's sessions by Claude account (else auto-detect via the status.json hook)
       - CC_DB_PATH=/data/db/cc-usage.db
       - CC_CONTENT_PORT=${CC_CONTENT_PORT:-8100}
-      - CC_CONTENT_DB_PATH=/data/db/cc-content.db   # V9 search index — isolated from the content-free usage DB; opt-in, deletable
+      - CC_CONTENT_DB_PATH=/data/db/cc-content.db   # V9 search index — isolated from the usage DB (content-free but for ysk_* note text); opt-in, deletable
       - CC_EXPORT_DIR=/data/exports                 # V13: export bundles (content-free; encrypted before write)
       # V9 semantic search (optional): set CC_EMBED_MODEL to a pulled Ollama embed model (e.g. nomic-embed-text)
       # to enable meaning-based search. Blank = semantic OFF (keyword search still works). Ollama is the user's
