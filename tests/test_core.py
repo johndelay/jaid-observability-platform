@@ -3055,16 +3055,23 @@ class YskTests(unittest.TestCase):
         self.write_state([self.NOTE_A, self.NOTE_B], view=(self.NOTE_A, 5000))
         self.assertEqual((rate.latest("sess-1")["note"], rate.latest()["tag"]), (self.NOTE_A, "Heads up"))
         ok = {"session_id": "${CLAUDE_SESSION_ID}", "tag": "Heads up", "note": self.NOTE_A + ' "quoted"', "verdict": "GOOD",
-              "why": "saved a redeploy", "checks": {c: True for c in rate.CHECKS}}
+              "why": "saved a redeploy", "checks": {c: True for c in rate.CHECKS}, "user_checks": ["acted", "new"]}
         self.assertIsNotNone(rate.append(dict(ok, verdict="GREAT"))[1])        # off-rubric verdict rejected
         self.assertIsNotNone(rate.append(dict(ok, checks={"true": True}))[1])  # all five checks required
+        # New + Acted are the USER's to answer — a rating where Claude filled them in is refused
+        for user in (None, [], ["new"], ["acted", "true"], ["new", "acted", "bogus"]):
+            self.assertIsNotNone(rate.append(dict(ok, user_checks=user))[1], user)
+        self.assertFalse(os.path.exists(self.ratings))                        # nothing rejected was written
         line, err = rate.append(ok)
         self.assertIsNone(err)
         self.assertIsNone(json.loads(line)["session_id"])                     # unsubstituted placeholder → null
         self.assertEqual(stat.S_IMODE(os.stat(self.ratings).st_mode), 0o600)  # holds note text
+        with open(self.ratings, "a") as fh:                                   # a paste-in-prompt line: no user_checks
+            fh.write(json.dumps({"note": self.NOTE_B, "verdict": "MEH", "checks": {}}) + "\n")
         with open(self.ratings) as fh:
-            rows = ysk.rating_events(fh, host="h")
-        self.assertEqual([json.loads(r["payload_json"])["note"] for r in rows], [self.NOTE_A + ' "quoted"'])
+            rows = [json.loads(r["payload_json"]) for r in ysk.rating_events(fh, host="h")]
+        self.assertEqual([(p["note"], p["user_checks"]) for p in rows],
+                         [(self.NOTE_A + ' "quoted"', ["new", "acted"]), (self.NOTE_B, None)])   # None = unknown
 
 
 if __name__ == "__main__":

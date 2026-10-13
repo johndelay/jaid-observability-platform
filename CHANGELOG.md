@@ -25,9 +25,12 @@ This is a curated, user-facing log — for the full commit history see the Git l
   plugin had already recorded before the first read are marked `backfill` instead of being given a time
   they don't have. The plugin's own checks never appear in transcripts, so this measures what it *said*, not
   what it *cost*. No dashboard view yet.
-- **`ysk-rate` skill** (`skill/ysk-rate/`). Ask Claude to *"rate that note"*: it scores the note on five
-  yes/no checks (true · new · matters · timely · acted), proposes GOOD / MEH / BAD with one sentence of why,
-  lets you override, and appends the result to `~/.cache/cc-observability/ysk-ratings.jsonl` (mode 600).
+- **`ysk-rate` skill** (`skill/ysk-rate/`). Ask Claude to *"rate that note"*: it first asks **you** the two
+  checks only you can answer — was it **new** to you, and did you **act** on it — then judges the other three
+  (true · matters · timely), proposes GOOD / MEH / BAD with one sentence of why, lets you override, and
+  appends the result to `~/.cache/cc-observability/ysk-ratings.jsonl` (mode 600). Each rating records which
+  checks you answered (`user_checks`), and the helper refuses one where *new* and *acted* weren't yours — a
+  pre-filled guess you merely didn't override would make "how often is it good" Claude's opinion, not yours.
 
 ### Changed
 - **The usage DB is no longer entirely content-free.** The `ysk_*` events above carry the note's text — a

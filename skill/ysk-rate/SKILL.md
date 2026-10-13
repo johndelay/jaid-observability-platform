@@ -1,6 +1,6 @@
 ---
 name: ysk-rate
-description: Rate a note from Claude Code's built-in "You should know" plugin — was it true, new, consequential, timely, acted on — and record the verdict (GOOD / MEH / BAD + why) to a local ratings file the JAID dashboard reads. Use when the user says "rate that note", "rate the last you-should-know", "was that note any good", "ysk rate", or wants to judge whether a side-agent note ("You should know" / "Heads up") was worth it.
+description: Rate a note from Claude Code's built-in "You should know" plugin — the user says whether it was new to them and whether they acted on it; Claude judges true, consequential, timely — and record the verdict (GOOD / MEH / BAD + why) to a local ratings file the JAID dashboard reads. Use when the user says "rate that note", "rate the last you-should-know", "was that note any good", "ysk rate", or wants to judge whether a side-agent note ("You should know" / "Heads up") was worth it.
 ---
 
 # ysk-rate — judge one "You should know" note and record it
@@ -25,31 +25,39 @@ RATE="$(dirname "$(readlink -f ~/.claude/skills/ysk-rate/SKILL.md)")/rate.py"
 
    **Quote the note back verbatim**, with its tag if known.
 
-2. **Judge five checks** from what this conversation shows — yes/no, one short reason each:
-   1. **True** — was the note correct?
-   2. **New** — did the user not already know it / hadn't it come up this session?
-   3. **Matters** — a real consequence: money, time, wasted work, a wrong result, a live decision?
-   4. **Timely** — did it arrive while it could still change something?
-   5. **Acted** — did we do something because of it?
+2. **Ask the user the two checks only they can answer — FIRST, before showing any judgment of your own:**
+   - **New** — *"Did you already know this?"*
+   - **Acted** — *"Did you do anything because of it?"*
 
-   **Verdict:** **GOOD** = true + new + matters · **MEH** = true but not new, or not consequential ·
-   **BAD** = wrong, trivia, or too late to matter. Plus **one sentence of why**.
+   ⛔ **Do not pre-fill, suggest, or hint at these two.** People tend to accept an answer that's already filled
+   in, and pre-filled answers would make the ratings
+   measure your opinion of the plugin, not the user's. If the user already said it in this conversation
+   ("I didn't know that", "fixed it because of the note"), quote their words instead of asking.
 
-   Show the five checks and the verdict, then ask **one** short question: *"Override any of these?"* The user's
-   answer wins. If they've already given their verdict, skip the question.
+3. **Then judge the other three** from what this conversation shows — yes/no, one short reason each:
+   - **True** — was the note correct?
+   - **Matters** — a real consequence: money, time, wasted work, a wrong result, a live decision?
+   - **Timely** — did it arrive while it could still change something?
 
-3. **Record it** — always through the helper (never `echo`/`printf`: quotes in a note would break the line).
-   Pass exact JSON on stdin with a quoted heredoc:
+   **Verdict** (from all five): **GOOD** = true + new + matters · **MEH** = true but not new, or not
+   consequential · **BAD** = wrong, trivia, or too late to matter. Plus **one sentence of why**.
+
+   Show all five checks (marking which the user answered) and the verdict, then ask **one** short question:
+   *"Override any of these?"* The user's answer wins.
+
+4. **Record it** — always through the helper (never `echo`/`printf`: quotes in a note would break the line).
+   Pass exact JSON on stdin with a quoted heredoc. `user_checks` lists every check the **user** answered or
+   overrode — always `new` and `acted`, plus any of yours they changed:
    ```bash
    python3 "$RATE" append <<'JSON'
    {"session_id": "${CLAUDE_SESSION_ID}", "tag": "Heads up", "note": "<the note, verbatim>",
     "checks": {"true": true, "new": true, "matters": true, "timely": true, "acted": false},
-    "verdict": "GOOD", "why": "<one sentence>"}
+    "user_checks": ["new", "acted"], "verdict": "GOOD", "why": "<one sentence>"}
    JSON
    ```
    It fills `ts` and `host`, writes one line to `~/.cache/cc-observability/ysk-ratings.jsonl` (mode 600) and
-   prints the line. **Show the user that printed line.** Exit 1 = rejected (it says why — fix and retry);
-   exit 2 = could not write.
+   prints the line. **Show the user that printed line.** Exit 1 = rejected (it says why — fix and retry; it
+   refuses a rating whose `user_checks` lacks `new` or `acted`); exit 2 = could not write.
 
 ## Notes
 

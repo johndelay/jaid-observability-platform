@@ -138,8 +138,12 @@ def rating_events(lines, host=None):
             continue
         k = note_key(r["note"])
         checks = r.get("checks") if isinstance(r.get("checks"), dict) else {}
+        # user_checks: which checks the USER answered (vs Claude's proposal left standing). None = not recorded,
+        # e.g. a line from the paste-in prompt — so a precision figure can be restricted to user-answered ratings.
+        user = r.get("user_checks")
+        user = [c for c in CHECKS if c in user] if isinstance(user, list) else None
         payload = {"tag": r.get("tag"), "note": r["note"], "note_key": k, "verdict": r["verdict"],
-                   "why": r.get("why"), "checks": {c: checks.get(c) for c in CHECKS}}
+                   "why": r.get("why"), "checks": {c: checks.get(c) for c in CHECKS}, "user_checks": user}
         eid = "ysk:rating:" + hashlib.sha1(ln.encode("utf-8")).hexdigest()[:16]
         out.append(_row(eid, _ts(r.get("ts")), r.get("session_id"), host, "ysk_rating", k, payload))
     return out

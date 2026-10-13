@@ -19,6 +19,10 @@ from datetime import datetime, timezone
 
 VERDICTS = ("GOOD", "MEH", "BAD")
 CHECKS = ("true", "new", "matters", "timely", "acted")
+# Only the user can know these two (did they already know it? did they act on it?), so a rating must say the
+# user answered them — a pre-filled guess the user merely didn't override would turn the precision figure into
+# Claude's opinion of the plugin rather than the user's.
+USER_ONLY = ("new", "acted")
 STORE_DIR = os.path.expanduser(os.environ.get("CC_YSK_STORE_DIR", "~/.claude/plugins/store"))
 RATINGS = os.path.expanduser(os.environ.get("CC_YSK_RATINGS", "~/.cache/cc-observability/ysk-ratings.jsonl"))
 
@@ -47,12 +51,17 @@ def append(r):
     checks = r.get("checks")
     if not isinstance(checks, dict) or any(not isinstance(checks.get(c), bool) for c in CHECKS):
         return None, f"checks must give true/false for each of: {', '.join(CHECKS)}"
+    user = r.get("user_checks")
+    if not isinstance(user, list) or any(c not in CHECKS for c in user):
+        return None, f"user_checks must list the checks the USER answered or overrode (from: {', '.join(CHECKS)})"
+    if any(c not in user for c in USER_ONLY):
+        return None, "ask the user NEW and ACTED (only they know) and list both in user_checks — don't pre-fill them"
     sid = r.get("session_id")
     rec = {"ts": r.get("ts") or datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
            "host": r.get("host") or socket.gethostname(),
            "session_id": None if not sid or "CLAUDE_SESSION_ID" in str(sid) else sid,   # unsubstituted → null
            "tag": r.get("tag"), "note": r["note"].strip(), "checks": {c: checks[c] for c in CHECKS},
-           "verdict": r["verdict"], "why": (r.get("why") or "").strip()}
+           "user_checks": [c for c in CHECKS if c in user], "verdict": r["verdict"], "why": (r.get("why") or "").strip()}
     line = json.dumps(rec, ensure_ascii=False, separators=(",", ":"))
     os.makedirs(os.path.dirname(RATINGS), exist_ok=True)
     fd = os.open(RATINGS, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
